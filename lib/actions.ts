@@ -53,6 +53,9 @@ export async function deleteClientDocument(clientId: string, fileUrl: string, do
 // ==========================================
 // 2. CLIENTES (CRUD)
 // ==========================================
+// ==========================================
+// 2. CLIENTES (CRUD)
+// ==========================================
 export async function createClient(formData: FormData) {
   const name = formData.get("name") as string
   const email = formData.get("email") as string
@@ -65,11 +68,14 @@ export async function createClient(formData: FormData) {
   const bairro = formData.get("bairro") as string
   const cidade = formData.get("cidade") as string
   const uf = formData.get("uf") as string
-  const dataNascimento = formData.get("dataNascimento") as string
   const contatoEmergencia = formData.get("contatoEmergencia") as string
   const queixaPrincipal = formData.get("queixaPrincipal") as string
   const condicoesMedicas = formData.get("condicoesMedicas") as string
   const fotoPerfil = formData.get("fotoPerfil") as string
+
+  // CORREÇÃO DA DATA: Converte o YYYY-MM-DD do HTML para o formato ISO do Prisma
+  const dataNascimentoRaw = formData.get("dataNascimento") as string
+  const dataNascimento = dataNascimentoRaw ? new Date(`${dataNascimentoRaw}T12:00:00Z`) : null
 
   const generalDocs = formData.getAll("general_docs")
   let generalDocsLinks: string[] = []
@@ -86,7 +92,8 @@ export async function createClient(formData: FormData) {
   await prisma.client.create({
     data: {
       name, email, phone, plan, status: "ativo", documento, cep, logradouro, numero, bairro, cidade, uf,
-      dataNascimento, contatoEmergencia, queixaPrincipal, condicoesMedicas, fotoPerfil,
+      dataNascimento, // Agora vai no formato correto!
+      contatoEmergencia, queixaPrincipal, condicoesMedicas, fotoPerfil,
       generalDocsLinks, examDocsLinks
     }
   })
@@ -105,11 +112,14 @@ export async function updateClient(id: string, formData: FormData) {
   const bairro = formData.get("bairro") as string;
   const cidade = formData.get("cidade") as string;
   const uf = formData.get("uf") as string;
-  const dataNascimento = formData.get("dataNascimento") as string;
   const contatoEmergencia = formData.get("contatoEmergencia") as string;
   const queixaPrincipal = formData.get("queixaPrincipal") as string;
   const condicoesMedicas = formData.get("condicoesMedicas") as string;
   const fotoPerfil = formData.get("fotoPerfil") as string;
+
+  // CORREÇÃO DA DATA: Converte o YYYY-MM-DD do HTML para o formato ISO do Prisma
+  const dataNascimentoRaw = formData.get("dataNascimento") as string;
+  const dataNascimento = dataNascimentoRaw ? new Date(`${dataNascimentoRaw}T12:00:00Z`) : null;
 
   try {
     const currentClient = await prisma.client.findUnique({ where: { id }, select: { generalDocsLinks: true, examDocsLinks: true } });
@@ -132,7 +142,8 @@ export async function updateClient(id: string, formData: FormData) {
       where: { id },
       data: {
         name, email, phone, plan, documento, cep, logradouro, numero, bairro, cidade, uf,
-        dataNascimento, contatoEmergencia, queixaPrincipal, condicoesMedicas, fotoPerfil,
+        dataNascimento, // Agora vai no formato correto!
+        contatoEmergencia, queixaPrincipal, condicoesMedicas, fotoPerfil,
         generalDocsLinks: updatedGeneralLinks, examDocsLinks: updatedExamLinks
       }
     });
@@ -713,14 +724,14 @@ export async function criarAgendamento(dados: any) {
     // --- SALVAR NO BANCO ---
     const transacoesFinanceiras = [];
     const apptsToCreate = datesToCheck.map(req => ({
-      clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
-      tempName: tipoAgendamento === 'EXPERIMENTAL' ? tempName : undefined,
-      tempPhone: tipoAgendamento === 'EXPERIMENTAL' ? tempPhone : undefined,
-      instructor: req.instructor,
-      type: finalType, 
-      date: req.date,
-      status: 'AGENDADO'
-    }));
+          clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
+          tempName: tipoAgendamento === 'EXPERIMENTAL' ? tempName : undefined,
+          tempPhone: tipoAgendamento === 'EXPERIMENTAL' ? tempPhone : undefined,
+          instructor: req.instructor,
+          type: finalType as any, 
+          date: req.date,
+          status: 'AGENDADO' as any
+        }));
     
     const createdAppts = await Promise.all(
       apptsToCreate.map(data => prisma.appointment.create({ data }))

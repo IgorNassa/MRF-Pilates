@@ -80,15 +80,21 @@ export default function ConfiguracoesPage() {
                 </div>
 
                 <div className="pt-6 border-t border-slate-100">
-                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-[#0f5c4e]"/> Horário de Funcionamento</h2>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-slate-500 uppercase">Abre às</label>
-                      <Input type="time" defaultValue="07:00" className="h-11 focus-visible:ring-[#0f5c4e] font-bold" />
+                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-[#0f5c4e]"/> Horário e Sessões</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Turno da Manhã</label>
+                      <div className="text-sm font-bold text-slate-800">07:30 às 11:30</div>
+                      <p className="text-xs text-slate-500 mt-1">4 Sessões</p>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-slate-500 uppercase">Fecha às</label>
-                      <Input type="time" defaultValue="19:00" className="h-11 focus-visible:ring-[#0f5c4e] font-bold" />
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Turno da Tarde</label>
+                      <div className="text-sm font-bold text-slate-800">14:00 às 19:00</div>
+                      <p className="text-xs text-slate-500 mt-1">5 Sessões</p>
+                    </div>
+                    <div className="p-4 bg-[#0f5c4e]/5 border border-[#0f5c4e]/20 rounded-xl">
+                      <label className="block text-xs font-bold text-[#0f5c4e] uppercase mb-2">Formato da Sessão</label>
+                      <div className="text-sm font-bold text-[#0f5c4e]">50 min + 10 min (Pausa)</div>
                     </div>
                   </div>
                 </div>

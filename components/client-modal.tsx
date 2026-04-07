@@ -219,20 +219,17 @@ export function ClientModal({ isOpen, onClose, clientData }: ClientModalProps) {
               </div>
 
               <div className="grid grid-cols-1 gap-5 sm:gap-6 sm:grid-cols-2">
-                {[ { name: "name", label: "Nome Completo *", defaultValue: clientData?.name, required: true }, { name: "email", label: "E-mail", defaultValue: clientData?.email, type: "email" }, { name: "phone", label: "WhatsApp *", defaultValue: clientData?.phone, required: true }, { name: "dataNascimento", label: "Data Nascimento", defaultValue: clientData?.dataNascimento, type: "date" }, ].map(input => (
+                {[ 
+                  { name: "name", label: "Nome Completo *", defaultValue: clientData?.name, required: true }, 
+                  { name: "email", label: "E-mail", defaultValue: clientData?.email, type: "email" }, 
+                  { name: "phone", label: "WhatsApp *", defaultValue: clientData?.phone, required: true }, 
+                  { name: "dataNascimento", label: "Data Nascimento", defaultValue: clientData?.dataNascimento, type: "date" }, 
+                ].map(input => (
                   <div key={input.name} className="space-y-1.5 sm:space-y-2 group">
                     <label className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{input.label}</label>
                     <input {...input} className="w-full rounded-xl h-11 sm:h-12 border border-border bg-card p-3.5 focus:ring-2 focus:ring-primary focus:border-primary/50 outline-none transition-all duration-200 hover:bg-muted/30" />
                   </div>
                 ))}
-                <div className="sm:col-span-2 space-y-1.5 sm:space-y-2 group">
-                  <label className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">Plano Atual</label>
-                  <select name="plan" defaultValue={clientData?.plan} className="w-full rounded-xl h-11 sm:h-12 border border-border bg-card p-3.5 focus:ring-2 focus:ring-primary focus:border-primary/50 outline-none transition-all duration-200 hover:bg-muted/30 cursor-pointer">
-                    <option value="Pilates 2x">Pilates 2x</option>
-                    <option value="Pilates 3x">Pilates 3x</option>
-                    <option value="Fisioterapia">Fisioterapia</option>
-                  </select>
-                </div>
               </div>
             </div>
 

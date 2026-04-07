@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox' // <-- AQUI ESTÁ A CORREÇÃO!
+import { Checkbox } from '@/components/ui/checkbox'
 import { Clock, CalendarDays, UserSquare2, Plus, Trash2, Info, AlertCircle, Lock, RotateCcw } from 'lucide-react'
 import {
   Select,
@@ -52,7 +52,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
   const [startDatePilates, setStartDatePilates] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   
   const [diasComHorarios, setDiasComHorarios] = useState<Record<string, string>>({})
-  const [singleTime, setSingleTime] = useState('08:00') 
+  const [singleTime, setSingleTime] = useState('07:30') // CORREÇÃO AQUI
   const [duracaoBase, setDuracaoBase] = useState(50) 
   const [maxDias, setMaxDias] = useState(1)
   
@@ -124,7 +124,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
       delete novosDias[dia];
     } else {
       if (Object.keys(novosDias).length < maxDias) {
-        novosDias[dia] = '08:00'; 
+        novosDias[dia] = '07:30'; // CORREÇÃO AQUI
       }
     }
     setDiasComHorarios(novosDias);
@@ -138,7 +138,8 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
     setFisioSessions(fisioSessions.map(s => s.id === id ? { ...s, [field]: value } : s))
   }
 
-  const horariosDisponiveisBase = ["07:00", "08:00", "09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+  // CORREÇÃO AQUI: Grade nova de 50 minutos
+  const horariosDisponiveisBase = ["07:30", "08:30", "09:30", "10:30", "14:00", "15:00", "16:00", "17:00", "18:00"]
 
   const isPastDate = (dateString: string) => {
     if (!dateString || dateString.length < 10) return false; 
