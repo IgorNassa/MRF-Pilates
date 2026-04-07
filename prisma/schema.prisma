@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Client {
+  id                String        @id @default(cuid())
+  name              String
+  email             String?
+  phone             String
+  plan              String?       
+  status            String        @default("ativo") // ativo, inativo, pausado
+  fotoPerfil        String?
+
+ // 💰 Campos de Gestão de Plano
+  planValue            Float?
+  planInstallments     Int?      @default(1)
+  planInstallmentsPaid Int?      @default(0)
+  planLastPayment      DateTime?
+  planDueDate          Int?      @default(10)
+  planPaymentMethod    String?   @default("PIX")
+  
+  // 🎯 NOVOS CAMPOS: Controle de Pacotes (Sessões Restantes)
+  totalSessions        Int       @default(0) // Quantidade total de aulas compradas
+  remainingSessions    Int       @default(0) // Quantas aulas faltam fazer
+  
+  // 🚨 NOVOS CAMPOS: Alinhados com a operação da Marisa
+  medicalAlert      String?       // Alerta de saúde crítico (ex: "Gestante", "Hérnia")
+  paymentDelayed    Boolean       @default(false)   // Bolinha vermelha de inadimplência na agenda
+  repositionCredits Int           @default(0)       // Saldo de reposições disponíveis
+
+  // 📁 ARQUIVOS (Links diretos do Bucket do Supabase)
+  generalDocsLinks  String[]      // Links para documentos/contratos
+  examDocsLinks     String[]      // Links para exames e laudos
+
+  // Campos de endereço e dados médicos
+  documento         String?
+  dataNascimento    DateTime?
+  cep               String?
+  logradouro        String?
+  numero            String?
+  bairro            String?
+  cidade            String?
+  uf                String?
+  contatoEmergencia String?
+  queixaPrincipal   String?
+  condicoesMedicas  String?
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  appointments      Appointment[]
+  evolutions        Evolution[]
+  transactions      Transaction[]
+}
+
+model Appointment {
+  id            String   @id @default(cuid())
+  date          DateTime 
+  
+  clientId      String?
+  client        Client?   @relation(fields: [clientId], references: [id])
+  
+  tempName      String?
+  tempPhone     String?
+  tempObs       String?
+
+  instructor    String   @default("marisa") 
+  
+  type          AppointmentType
+  status        AppointmentStatus @default(AGENDADO)
+  
+  isReposition  Boolean  @default(false)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transaction   Transaction?
+}
+
+model Evolution {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  description String
+  instructor  String?
+  
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum AppointmentType {
+  PILATES_1X
+  PILATES_2X
+  PILATES_3X
+  PILATES_5X
+  FISIO_SESSAO
+  FISIO_AVALIACAO
+  EXPERIMENTAL
+}
+
+enum AppointmentStatus {
+  AGENDADO
+  REALIZADO
+  FALTA           
+  CANCELADO       
+  REPOSICAO       
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  title         String   // Ex: "Mensalidade Carlos", "Aluguel da Sala", "Luz"
+  amount        Float
+  type          String   // "RECEITA" ou "DESPESA"
+  category      String   // "MENSALIDADE", "SESSAO_AVULSA", "CUSTO_FIXO", "IMPOSTO", "OUTROS"
+  status        String   @default("PENDENTE") // "PENDENTE" ou "PAGO"
+  date          DateTime @default(now())
+  paymentMethod String?  // "PIX", "DINHEIRO", "CARTAO", "BOLETO"
+  
+  clientId      String?
+  client        Client?  @relation(fields: [clientId], references: [id])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Ligação direta com Agendamento (Sessão Avulsa)
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Settings {
+  id              String   @id @default(cuid())
+  
+  // Clínica
+  studioName      String   @default("MRF Pilates")
+  cnpj            String?
+  phone           String?
+  email           String?
+  address         String?
+  openTime        String   @default("07:00")
+  closeTime       String   @default("19:00")
+
+  // Preços Avulsos
+  priceFisio      Float    @default(150.00)
+  pricePilates    Float    @default(100.00)
+  priceExp        Float    @default(50.00)
+
+  // Mensagens (WhatsApp)
+  msgFatura       String?
+  msgAtraso       String?
+  msgConfirmacao  String?
+  msgAniversario  String?
+  msgProspeccao   String?
+
+  updatedAt       DateTime @updatedAt
+}
