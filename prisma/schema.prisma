@@ -162,12 +162,22 @@ model Settings {
   pricePilates    Float    @default(100.00)
   priceExp        Float    @default(50.00)
 
+  // 🎯 NOVOS CAMPOS: Preços dos Planos
+  plan1xMensal     Float    @default(150.00)
+  plan1xTrimestral Float    @default(400.00)
+  plan1xSemestral  Float    @default(750.00)
+  plan2xMensal     Float    @default(250.00)
+  plan2xTrimestral Float    @default(700.00)
+  plan2xSemestral  Float    @default(1300.00)
+  plan3xMensal     Float    @default(350.00)
+  plan3xTrimestral Float    @default(1000.00)
+  plan3xSemestral  Float    @default(1800.00)
+
   // Mensagens (WhatsApp)
   msgFatura       String?
   msgAtraso       String?
   msgConfirmacao  String?
   msgAniversario  String?
   msgProspeccao   String?
-
   updatedAt       DateTime @updatedAt
 }

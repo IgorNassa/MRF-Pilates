@@ -1,5 +1,5 @@
 // app/clientes/[id]/page.tsx
-import { getClientById } from "@/lib/actions"
+import { getClientById, getSettings } from "@/lib/actions"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Phone, Mail, MapPin, Calendar, HeartPulse, FileText, Stethoscope, MessageCircle, AlertCircle, Crown, Zap, CalendarDays, DollarSign } from "lucide-react"
@@ -11,6 +11,9 @@ import ClientFinanceHistory from "./ClientFinanceHistory"
 
 export default async function ClientProfilePage({ params }: { params: { id: string } }) {
   const client = await getClientById(params.id)
+  
+  // Buscar configurações para enviar os preços atualizados para o PlanButtons
+  const settings = await getSettings()
 
   if (!client) {
     notFound()
@@ -24,7 +27,7 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
   let totalSessoesPlano = 0
 
   if (planStr.includes("MENSAL")) mesesDuracao = 1
-  if (planStr.includes("TRIMESTRAL")) mesesDuracao = 4 // Mantido os 4 meses como você pediu!
+  if (planStr.includes("TRIMESTRAL")) mesesDuracao = 4 // Mantido os 4 meses
   if (planStr.includes("SEMESTRAL")) mesesDuracao = 6
 
   if (planStr.includes("1X")) totalSessoesPlano = 4 * mesesDuracao
@@ -109,6 +112,7 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
                   <h3 className="font-bold text-foreground flex items-center gap-2"><Zap className="w-4 h-4 text-primary" /> Assinatura</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">Gestão de pacote e sessões</p>
                 </div>
+                {/* Aqui nós passamos o settings para o botão de planos! */}
                 <PlanButtons 
                   clientId={client.id} 
                   currentPlan={client.plan} 
@@ -117,6 +121,7 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
                   planInstallmentsPaid={client.planInstallmentsPaid}
                   planDueDate={client.planDueDate}
                   planPaymentMethod={(client as any).planPaymentMethod}
+                  settings={settings} 
                 />
               </div>
               

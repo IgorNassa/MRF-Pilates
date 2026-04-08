@@ -21,7 +21,8 @@ export default async function DashboardPage() {
     prisma.client.count({ where: { status: 'ativo' } }),
     prisma.client.count({ where: { status: 'ativo', createdAt: { gte: inicioMes, lte: fimMes } } }),
     prisma.appointment.findMany({
-      where: { date: { gte: inicioDia, lte: fimDia }, status: { notIn: ['CANCELADO'] } }
+      where: { date: { gte: inicioDia, lte: fimDia }, status: { notIn: ['CANCELADO'] } },
+      include: { client: true } // <- CORREÇÃO: Inclui os dados do cliente para mostrar o nome
     }),
     prisma.transaction.findMany({
       where: { date: { gte: inicioMes, lte: fimMes } }
@@ -48,8 +49,12 @@ export default async function DashboardPage() {
   const aniversariantes = todosClientes
     .filter(c => {
       if (!c.dataNascimento) return false
-      const partes = c.dataNascimento.split('-') 
-      return partes.length === 3 && partes[1] === mesAtual && partes[2] === diaAtual
+      // CORREÇÃO: Trata a dataNascimento como um Objeto Date nativo
+      const dataNasc = new Date(c.dataNascimento)
+      const mesCliente = (dataNasc.getUTCMonth() + 1).toString().padStart(2, '0')
+      const diaCliente = dataNasc.getUTCDate().toString().padStart(2, '0')
+      
+      return mesCliente === mesAtual && diaCliente === diaAtual
     })
     .map(c => ({ id: c.id, name: c.name, phone: c.phone || '' }))
 
@@ -60,7 +65,7 @@ export default async function DashboardPage() {
     date: a.date.toISOString(),
     type: a.type,
     instructor: a.instructor,
-    clientName: a.tempName || 'Visitante' // O Dashboard busca o cliente na tabela client depois se precisar
+    clientName: a.client?.name || a.tempName || 'Visitante' // <- Mostra o nome real do banco
   }))
 
   // Mapeamos as evoluções para Plain Object

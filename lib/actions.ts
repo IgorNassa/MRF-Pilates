@@ -775,19 +775,17 @@ export async function criarAgendamento(dados: any) {
     return { sucesso: false, erro: "Falha ao gravar no banco. Verifique os dados inseridos." };
   }
 }
-
 export async function getSettings() {
   try {
     let settings = await prisma.settings.findFirst();
     if (!settings) {
       settings = await prisma.settings.create({
         data: {
-          studioName: "MRF Pilates",
-          openTime: "07:00",
-          closeTime: "19:00",
-          priceFisio: 150.00,
-          pricePilates: 100.00,
-          priceExp: 50.00,
+          studioName: "MRF Pilates", openTime: "07:00", closeTime: "19:00",
+          priceFisio: 150.00, pricePilates: 100.00, priceExp: 50.00,
+          plan1xMensal: 150.00, plan1xTrimestral: 400.00, plan1xSemestral: 750.00,
+          plan2xMensal: 250.00, plan2xTrimestral: 700.00, plan2xSemestral: 1300.00,
+          plan3xMensal: 350.00, plan3xTrimestral: 1000.00, plan3xSemestral: 1800.00,
           msgFatura: "Olá [NOME], sua fatura da MRF Pilates já está liberada! O vencimento é dia [DATA].",
           msgAtraso: "Olá [NOME], tudo bem? Notamos que a sua mensalidade com vencimento em [DATA] ainda está pendente no sistema. Podemos ajudar com algo?",
           msgConfirmacao: "Olá [NOME], passando para confirmar sua sessão de Pilates amanhã às [HORA]. Por favor, nos avise se houver algum imprevisto!",
@@ -820,7 +818,6 @@ export async function updateSettings(dados: any) {
     return { sucesso: false, erro: "Falha ao salvar configurações" };
   }
 }
-
 export async function checkDailyAvailability(dateStr: string) {
   try {
     const startOfDay = new Date(dateStr + "T00:00:00");
@@ -837,12 +834,16 @@ export async function checkDailyAvailability(dateStr: string) {
     const availability: Record<string, { total: number, Marisa: number, Loani: number }> = {};
 
     appointments.forEach(app => {
-      const h = app.date.getHours().toString().padStart(2, '0') + ':00';
-      if (!availability[h]) availability[h] = { total: 0, Marisa: 0, Loani: 0 };
+      // CORREÇÃO: Agora respeita a hora e o minuto (Ex: 07:30)
+      const h = app.date.getHours().toString().padStart(2, '0');
+      const m = app.date.getMinutes().toString().padStart(2, '0');
+      const timeKey = `${h}:${m}`;
       
-      availability[h].total += 1;
-      if (app.instructor === 'Marisa') availability[h].Marisa += 1;
-      if (app.instructor === 'Loani') availability[h].Loani += 1;
+      if (!availability[timeKey]) availability[timeKey] = { total: 0, Marisa: 0, Loani: 0 };
+      
+      availability[timeKey].total += 1;
+      if (app.instructor === 'Marisa') availability[timeKey].Marisa += 1;
+      if (app.instructor === 'Loani') availability[timeKey].Loani += 1;
     });
 
     return availability; 

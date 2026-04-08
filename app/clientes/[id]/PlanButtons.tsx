@@ -9,14 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { atualizarPlanoCliente, removerPlanoCliente } from '@/lib/actions'
 
-const TABELA_PRECOS: Record<string, number> = {
-  "PILATES_1X MENSAL": 150, "PILATES_1X TRIMESTRAL": 400, "PILATES_1X SEMESTRAL": 750,
-  "PILATES_2X MENSAL": 250, "PILATES_2X TRIMESTRAL": 700, "PILATES_2X SEMESTRAL": 1300,
-  "PILATES_3X MENSAL": 350, "PILATES_3X TRIMESTRAL": 1000, "PILATES_3X SEMESTRAL": 1800,
-  "FISIO_SESSAO MENSAL": 400
-}
-
-export default function PlanButtons({ clientId, currentPlan, planValue, planInstallments, planInstallmentsPaid, planDueDate, planPaymentMethod }: any) {
+export default function PlanButtons({ clientId, currentPlan, planValue, planInstallments, planInstallmentsPaid, planDueDate, planPaymentMethod, settings }: any) {
   const router = useRouter()
   
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -27,13 +20,25 @@ export default function PlanButtons({ clientId, currentPlan, planValue, planInst
   const [vencimento, setVencimento] = useState(planDueDate?.toString() || '10')
   const [isento, setIsento] = useState(planValue === 0)
   
-  // Controle de Forma de Pagamento
   const [paymentMethod, setPaymentMethod] = useState(planPaymentMethod || 'PIX')
   
-  // Controle Inteligente de Parcelas (Trava em 1 se não for crédito)
   const [parcelasInput, setParcelasInput] = useState(planInstallments?.toString() || '1')
   const isCredito = paymentMethod === 'CARTAO_CREDITO'
   const parcelas = isCredito ? parcelasInput : '1'
+
+  // TABELA DINÂMICA (Puxa das configurações do sistema)
+  const TABELA_PRECOS: Record<string, number> = {
+    "PILATES_1X MENSAL": settings?.plan1xMensal || 150,
+    "PILATES_1X TRIMESTRAL": settings?.plan1xTrimestral || 400,
+    "PILATES_1X SEMESTRAL": settings?.plan1xSemestral || 750,
+    "PILATES_2X MENSAL": settings?.plan2xMensal || 250,
+    "PILATES_2X TRIMESTRAL": settings?.plan2xTrimestral || 700,
+    "PILATES_2X SEMESTRAL": settings?.plan2xSemestral || 1300,
+    "PILATES_3X MENSAL": settings?.plan3xMensal || 350,
+    "PILATES_3X TRIMESTRAL": settings?.plan3xTrimestral || 1000,
+    "PILATES_3X SEMESTRAL": settings?.plan3xSemestral || 1800,
+    "FISIO_SESSAO MENSAL": (settings?.priceFisio * 4) || 600
+  }
 
   const valorCheioNovoPlano = TABELA_PRECOS[selectedPlan] || 0
   const valorJaPago = (currentPlan && planValue && planInstallments) ? (planValue / planInstallments) * (planInstallmentsPaid || 0) : 0
