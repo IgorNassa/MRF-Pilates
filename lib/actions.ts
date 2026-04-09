@@ -53,9 +53,6 @@ export async function deleteClientDocument(clientId: string, fileUrl: string, do
 // ==========================================
 // 2. CLIENTES (CRUD)
 // ==========================================
-// ==========================================
-// 2. CLIENTES (CRUD)
-// ==========================================
 export async function createClient(formData: FormData) {
   const name = formData.get("name") as string
   const email = formData.get("email") as string
@@ -605,12 +602,13 @@ export async function criarAgendamento(dados: any) {
 
     let datesToCheck: { date: Date, instructor: string, clientId?: string }[] = [];
 
+    // --- CORREÇÃO DE FUSO HORÁRIO APLICADA AQUI ---
     if (serviceType === 'FISIOTERAPIA') {
       for (const session of fisioSessions) {
         if (!session.date || !session.timeSlot) continue;
         const [hora, minuto] = session.timeSlot.split(':');
-        const d = new Date(session.date + "T00:00:00");
-        d.setHours(Number(hora), Number(minuto), 0);
+        // Força o fuso brasileiro adicionando -03:00 na string ISO
+        const d = new Date(`${session.date}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
         datesToCheck.push({ date: d, instructor: instructorId, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined });
       }
     } else if (serviceType === 'PILATES') {
@@ -619,8 +617,8 @@ export async function criarAgendamento(dados: any) {
       if (!diasComHorarios || Object.keys(diasComHorarios).length === 0) {
         if (!singleTime) return { sucesso: false, erro: "Selecione o horário para a sessão avulsa." };
         const [hora, minuto] = singleTime.split(':');
-        let d = new Date(startDate + "T00:00:00");
-        d.setHours(Number(hora), Number(minuto), 0);
+        // Força fuso BR na Aula Avulsa
+        let d = new Date(`${startDate}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
         datesToCheck.push({ date: d, instructor: instructorId, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined });
         
         isAvulso = true; 
@@ -643,20 +641,22 @@ export async function criarAgendamento(dados: any) {
           
           const [hora, minuto] = horarioDoDia.split(':');
 
-          let d = new Date(startDate + "T00:00:00"); 
-          d.setHours(0, 0, 0, 0); 
-          while (d.getDay() !== diaNumero) { d.setDate(d.getDate() + 1); }
-
-          const agora = new Date();
-          if (d.getDate() === agora.getDate() && d.getMonth() === agora.getMonth() && d.getFullYear() === agora.getFullYear() && agora.getHours() >= Number(hora)) {
-            d.setDate(d.getDate() + 7);
-          }
+          // Resolve a matemática de dias usando UTC 12:00 (Meio-dia) para o dia nunca pular para frente ou para trás
+          const [ano, mes, diaDaData] = startDate.split('-').map(Number);
+          let d = new Date(Date.UTC(ano, mes - 1, diaDaData, 12, 0, 0)); 
+          
+          while (d.getUTCDay() !== diaNumero) { d.setUTCDate(d.getUTCDate() + 1); }
 
           for (let i = 0; i < totalSemanas; i++) { 
-            const dataSalvar = new Date(d);
-            dataSalvar.setHours(Number(hora), Number(minuto), 0);
+            const yyyy = d.getUTCFullYear();
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            
+            // Força a criação da string final amarrada ao fuso do Brasil
+            const dataSalvar = new Date(`${yyyy}-${mm}-${dd}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
             datesToCheck.push({ date: dataSalvar, instructor: instructorId, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined });
-            d.setDate(d.getDate() + 7);
+            
+            d.setUTCDate(d.getUTCDate() + 7); // pula uma semana
           }
         }
       }
@@ -685,8 +685,10 @@ export async function criarAgendamento(dados: any) {
       for (const req of datesToCheck) {
           const t = req.date.getTime();
           const inSlot = grouped[t] || [];
-          const diaStr = `${req.date.getDate().toString().padStart(2,'0')}/${(req.date.getMonth()+1).toString().padStart(2,'0')}/${req.date.getFullYear()}`;
-          const horaStr = `${req.date.getHours().toString().padStart(2,'0')}:${req.date.getMinutes().toString().padStart(2,'0')}`;
+          
+          // Formatação correta para a mensagem de erro
+          const diaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(req.date);
+          const horaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(req.date);
 
           if (req.clientId) {
             const isClone = inSlot.some(a => a.clientId === req.clientId);
@@ -714,7 +716,6 @@ export async function criarAgendamento(dados: any) {
         return { sucesso: false, erro: `Saldo insuficiente. O aluno tem ${saldo} crédito(s) e você tenta marcar ${qtdNecessaria} reposições.` };
       }
 
-      // Desconta os créditos usados
       await prisma.client.update({
         where: { id: clientId },
         data: { repositionCredits: { decrement: qtdNecessaria } }
@@ -737,7 +738,7 @@ export async function criarAgendamento(dados: any) {
       apptsToCreate.map(data => prisma.appointment.create({ data }))
     );
 
-    // --- GERAÇÃO FINANCEIRA (SOMENTE SE NÃO FOR REPOSIÇÃO) ---
+    // --- GERAÇÃO FINANCEIRA ---
     if (!isReposicao) {
       for (const appt of createdAppts) {
         if (finalType === 'FISIO_SESSAO' || finalType === 'EXPERIMENTAL' || isAvulso) {
@@ -775,31 +776,6 @@ export async function criarAgendamento(dados: any) {
     return { sucesso: false, erro: "Falha ao gravar no banco. Verifique os dados inseridos." };
   }
 }
-export async function getSettings() {
-  try {
-    let settings = await prisma.settings.findFirst();
-    if (!settings) {
-      settings = await prisma.settings.create({
-        data: {
-          studioName: "MRF Pilates", openTime: "07:00", closeTime: "19:00",
-          priceFisio: 150.00, pricePilates: 100.00, priceExp: 50.00,
-          plan1xMensal: 150.00, plan1xTrimestral: 400.00, plan1xSemestral: 750.00,
-          plan2xMensal: 250.00, plan2xTrimestral: 700.00, plan2xSemestral: 1300.00,
-          plan3xMensal: 350.00, plan3xTrimestral: 1000.00, plan3xSemestral: 1800.00,
-          msgFatura: "Olá [NOME], sua fatura da MRF Pilates já está liberada! O vencimento é dia [DATA].",
-          msgAtraso: "Olá [NOME], tudo bem? Notamos que a sua mensalidade com vencimento em [DATA] ainda está pendente no sistema. Podemos ajudar com algo?",
-          msgConfirmacao: "Olá [NOME], passando para confirmar sua sessão de Pilates amanhã às [HORA]. Por favor, nos avise se houver algum imprevisto!",
-          msgAniversario: "Parabéns [NOME]! A equipe MRF Pilates te deseja um dia maravilhoso e cheio de energia e muito movimento. Feliz aniversário!",
-          msgProspeccao: "Olá [NOME], tudo bem? Vi que você tem interesse em cuidar da sua saúde com a gente. Vamos agendar uma aula experimental sem compromisso?"
-        }
-      });
-    }
-    return settings;
-  } catch (error) {
-    console.error("Erro ao buscar configurações:", error);
-    return null;
-  }
-}
 
 export async function updateSettings(dados: any) {
   try {
@@ -818,10 +794,12 @@ export async function updateSettings(dados: any) {
     return { sucesso: false, erro: "Falha ao salvar configurações" };
   }
 }
+
 export async function checkDailyAvailability(dateStr: string) {
   try {
-    const startOfDay = new Date(dateStr + "T00:00:00");
-    const endOfDay = new Date(dateStr + "T23:59:59");
+    // Força o servidor a buscar os dados amarrados ao Fuso Brasileiro e não ao UTC
+    const startOfDay = new Date(`${dateStr}T00:00:00-03:00`);
+    const endOfDay = new Date(`${dateStr}T23:59:59-03:00`);
 
     const appointments = await prisma.appointment.findMany({
       where: {
@@ -834,10 +812,14 @@ export async function checkDailyAvailability(dateStr: string) {
     const availability: Record<string, { total: number, Marisa: number, Loani: number }> = {};
 
     appointments.forEach(app => {
-      // CORREÇÃO: Agora respeita a hora e o minuto (Ex: 07:30)
-      const h = app.date.getHours().toString().padStart(2, '0');
-      const m = app.date.getMinutes().toString().padStart(2, '0');
-      const timeKey = `${h}:${m}`;
+      // Lê o horário do banco isolando o fuso de onde quer que o servidor esteja hospedado
+      const formatter = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      const timeKey = formatter.format(app.date); // Devolve exatamente "07:30"
       
       if (!availability[timeKey]) availability[timeKey] = { total: 0, Marisa: 0, Loani: 0 };
       

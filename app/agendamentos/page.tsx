@@ -5,14 +5,13 @@ import Link from 'next/link'
 import { Sidebar } from '@/components/sidebar'
 import { Button } from '@/components/ui/button' 
 import { Plus } from 'lucide-react' 
+import { unstable_noStore as noStore } from 'next/cache'
 
-// 🔥 ESTAS 3 LINHAS MATAM O CACHE FANTASMA DO NEXT.JS
 export const dynamic = 'force-dynamic'
-export const fetchCache = 'force-no-store'
-export const revalidate = 0
 
 export default async function AgendamentosPage() {
-  // 1. Busca os dados no banco
+  noStore(); // Mata o cache da Vercel para garantir dados ao vivo
+
   const appointmentsRaw = await prisma.appointment.findMany({
     include: {
       client: {
@@ -26,11 +25,11 @@ export default async function AgendamentosPage() {
     orderBy: { date: 'asc' }
   });
 
-  // 2. Transforma as datas do servidor em texto ISO 
-  // Isso impede que o navegador se confunda com o fuso horário na hora de renderizar
+  // O segredo está aqui: toISOString() mantém o "Z" (UTC) no final.
+  // O navegador (no Brasil) vai ver o "Z" e subtrair 3 horas automaticamente!
   const appointments = appointmentsRaw.map(app => ({
     ...app,
-    date: app.date.toISOString(),
+    date: app.date.toISOString(), 
     createdAt: app.createdAt.toISOString(),
     updatedAt: app.updatedAt.toISOString(),
   }));

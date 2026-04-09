@@ -5,7 +5,7 @@ import { ptBR } from "date-fns/locale"
 
 // Recebe os agendamentos reais através de props
 export function CalendarOverview({ appointments = [] }: { appointments?: any[] }) {
-  const hours = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+  const hours = ["07:30", "08:30", "09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
   const hoje = new Date()
 
   return (
