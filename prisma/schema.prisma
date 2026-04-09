@@ -181,3 +181,12 @@ model Settings {
   msgProspeccao   String?
   updatedAt       DateTime @updatedAt
 }
+
+model InstructorBlock {
+  id         String   @id @default(uuid())
+  instructor String
+  date       DateTime
+  startTime  String
+  endTime    String
+  reason     String?
+}

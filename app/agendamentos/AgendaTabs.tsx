@@ -171,7 +171,7 @@ export default function AgendaTabs({ initialAppointments = [] }: { initialAppoin
   // CORREÇÃO: Nova Grade de Horários (50 minutos + 10 de intervalo)
   const hours = [
     "07:30", "08:30", "09:30", "10:30", "11:30",
-    "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"
+    "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"
   ]
 
   return (

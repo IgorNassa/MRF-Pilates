@@ -1,14 +1,15 @@
-// app/configuracoes/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
 import { Sidebar } from "@/components/sidebar"
-import { Building, DollarSign, Users, MessageSquare, Save, Settings2, Clock, Wallet, UsersRound, CalendarDays, Loader2 } from "lucide-react"
+import { Building, DollarSign, Users, MessageSquare, Save, Settings2, Clock, Wallet, UsersRound, CalendarDays, Loader2, CalendarX2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { getSettings, updateSettings } from "@/lib/actions"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { getSettings, updateSettings, createInstructorBlock, getInstructorBlocks, deleteInstructorBlock } from "@/lib/actions"
 import { useToast } from "@/hooks/use-toast"
+import { format } from 'date-fns'
 
 export default function ConfiguracoesPage() {
   const { toast } = useToast()
@@ -16,7 +17,11 @@ export default function ConfiguracoesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   
-  // Estado para os dados das configurações, incluindo os novos planos
+  // Estado para Indisponibilidades
+  const [blocks, setBlocks] = useState<any[]>([])
+  const [newBlock, setNewBlock] = useState({ instructor: 'Marisa', date: '', startTime: '07:30', endTime: '18:00', reason: '' })
+  const [isBlocking, setIsBlocking] = useState(false)
+
   const [config, setConfig] = useState({
     studioName: '', cnpj: '', phone: '', email: '', address: '',
     openTime: '07:30', closeTime: '19:00',
@@ -27,7 +32,6 @@ export default function ConfiguracoesPage() {
     msgFatura: '', msgAtraso: '', msgConfirmacao: '', msgAniversario: '', msgProspeccao: ''
   })
 
-  // Carregar configurações ao montar a página
   useEffect(() => {
     async function loadData() {
       const data = await getSettings()
@@ -42,6 +46,10 @@ export default function ConfiguracoesPage() {
           msgFatura: data.msgFatura || '', msgAtraso: data.msgAtraso || '', msgConfirmacao: data.msgConfirmacao || '', msgAniversario: data.msgAniversario || '', msgProspeccao: data.msgProspeccao || ''
         })
       }
+      
+      const blocksData = await getInstructorBlocks()
+      if (blocksData) setBlocks(blocksData)
+      
       setLoading(false)
     }
     loadData()
@@ -56,6 +64,28 @@ export default function ConfiguracoesPage() {
       toast({ variant: "destructive", title: "Erro", description: "Falha ao salvar." })
     }
     setSaving(false)
+  }
+
+  const handleAddBlock = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsBlocking(true)
+    const res = await createInstructorBlock(newBlock)
+    if (res.sucesso) {
+      toast({ title: "Bloqueio criado", description: "A doutora não receberá mais aulas neste período." })
+      setNewBlock({ instructor: 'Marisa', date: '', startTime: '07:30', endTime: '18:00', reason: '' })
+      const updatedBlocks = await getInstructorBlocks()
+      setBlocks(updatedBlocks)
+    } else {
+      toast({ variant: "destructive", title: "Erro", description: "Falha ao bloquear horário." })
+    }
+    setIsBlocking(false)
+  }
+
+  const handleRemoveBlock = async (id: string) => {
+    await deleteInstructorBlock(id)
+    const updatedBlocks = await getInstructorBlocks()
+    setBlocks(updatedBlocks)
+    toast({ title: "Bloqueio Removido", description: "A agenda foi liberada novamente." })
   }
 
   if (loading) {
@@ -94,7 +124,7 @@ export default function ConfiguracoesPage() {
               <DollarSign className="w-4 h-4" /> Tabela de Preços
             </button>
             <button onClick={() => setActiveTab('EQUIPE')} className={`px-4 py-2.5 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${activeTab === 'EQUIPE' ? 'border-[#0f5c4e] text-[#0f5c4e]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
-              <Users className="w-4 h-4" /> Equipe
+              <Users className="w-4 h-4" /> Equipe e Horários
             </button>
             <button onClick={() => setActiveTab('MENSAGENS')} className={`px-4 py-2.5 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${activeTab === 'MENSAGENS' ? 'border-[#0f5c4e] text-[#0f5c4e]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
               <MessageSquare className="w-4 h-4" /> Mensagens
@@ -129,7 +159,7 @@ export default function ConfiguracoesPage() {
                 </div>
 
                 <div className="pt-6 border-t border-slate-100">
-                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-[#0f5c4e]"/> Horário e Sessões</h2>
+                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-[#0f5c4e]"/> Horário Geral do Studio</h2>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-xs font-semibold mb-1 text-slate-500 uppercase">Abre às</label>
@@ -178,7 +208,6 @@ export default function ConfiguracoesPage() {
                   <p className="text-sm text-slate-500 mb-6">Defina os valores padrão. Eles aparecerão automaticamente na hora de matricular o paciente.</p>
                   
                   <div className="space-y-4">
-                    {/* Pilates 1x */}
                     <div className="flex flex-col sm:flex-row gap-4 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
                       <div className="flex-1 flex items-center"><h3 className="font-bold text-slate-800">Pilates 1x na Semana</h3></div>
                       <div className="grid grid-cols-3 gap-3 w-full sm:w-auto">
@@ -197,7 +226,6 @@ export default function ConfiguracoesPage() {
                       </div>
                     </div>
 
-                    {/* Pilates 2x */}
                     <div className="flex flex-col sm:flex-row gap-4 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
                       <div className="flex-1 flex items-center"><h3 className="font-bold text-slate-800">Pilates 2x na Semana</h3></div>
                       <div className="grid grid-cols-3 gap-3 w-full sm:w-auto">
@@ -216,7 +244,6 @@ export default function ConfiguracoesPage() {
                       </div>
                     </div>
 
-                    {/* Pilates 3x */}
                     <div className="flex flex-col sm:flex-row gap-4 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
                       <div className="flex-1 flex items-center"><h3 className="font-bold text-slate-800">Pilates 3x na Semana</h3></div>
                       <div className="grid grid-cols-3 gap-3 w-full sm:w-auto">
@@ -240,25 +267,96 @@ export default function ConfiguracoesPage() {
             )}
 
             {activeTab === 'EQUIPE' && (
-              <div className="space-y-6">
+              <div className="space-y-10">
+                {/* Instrutoras Ativas */}
                 <div>
                   <h2 className="text-xl font-bold text-slate-800">Corpo Clínico / Instrutores</h2>
-                  <p className="text-sm text-slate-500 mt-1">Configuração de profissionais (Em breve personalização de agenda).</p>
-                </div>
-                <div className="grid gap-3">
-                  <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#0f5c4e]/10 text-[#0f5c4e] rounded-full flex items-center justify-center font-bold">M</div>
-                      <div><p className="font-bold text-slate-800">Dr(a). Marisa</p><p className="text-xs text-slate-500">Fisioterapeuta / Pilates</p></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                    <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#0f5c4e]/10 text-[#0f5c4e] rounded-full flex items-center justify-center font-bold">M</div>
+                        <div><p className="font-bold text-slate-800">Dra. Marisa</p><p className="text-xs text-slate-500">Fisioterapeuta / Pilates</p></div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#0f5c4e]/10 text-[#0f5c4e] rounded-full flex items-center justify-center font-bold">L</div>
+                        <div><p className="font-bold text-slate-800">Dra. Loani</p><p className="text-xs text-slate-500">Fisioterapeuta / Pilates</p></div>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#0f5c4e]/10 text-[#0f5c4e] rounded-full flex items-center justify-center font-bold">L</div>
-                      <div><p className="font-bold text-slate-800">Dr(a). Loani</p><p className="text-xs text-slate-500">Fisioterapeuta / Pilates</p></div>
+                </div>
+
+                {/* Bloco de Indisponibilidade */}
+                <div className="pt-8 border-t border-slate-100">
+                  <div className="flex items-start gap-3 mb-6">
+                    <div className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center shrink-0">
+                      <CalendarX2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-800">Marcar Indisponibilidade</h2>
+                      <p className="text-sm text-slate-500 mt-1">Bloqueie a agenda da Doutora para que novos agendamentos não sejam permitidos em horários específicos (Ex: Férias, Consultas, Imprevistos).</p>
                     </div>
                   </div>
+
+                  <form onSubmit={handleAddBlock} className="p-6 bg-red-50/30 border border-red-100 rounded-2xl shadow-sm space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 mb-1.5 block">Doutora</label>
+                        <Select value={newBlock.instructor} onValueChange={(v) => setNewBlock({...newBlock, instructor: v})}>
+                           <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="Marisa">Dra. Marisa</SelectItem>
+                             <SelectItem value="Loani">Dra. Loani</SelectItem>
+                           </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 mb-1.5 block">Data do Bloqueio</label>
+                        <Input type="date" required value={newBlock.date} onChange={e => setNewBlock({...newBlock, date: e.target.value})} className="bg-white font-medium" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 mb-1.5 block">Das (Hora inicial)</label>
+                        <Input type="time" required value={newBlock.startTime} onChange={e => setNewBlock({...newBlock, startTime: e.target.value})} className="bg-white font-medium" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 mb-1.5 block">Até (Hora final)</label>
+                        <Input type="time" required value={newBlock.endTime} onChange={e => setNewBlock({...newBlock, endTime: e.target.value})} className="bg-white font-medium" />
+                      </div>
+                    </div>
+                    <div className="flex items-end gap-4">
+                      <div className="flex-1">
+                        <label className="text-xs font-bold text-slate-700 mb-1.5 block">Motivo (Opcional - Apenas interno)</label>
+                        <Input placeholder="Ex: Consulta médica..." value={newBlock.reason} onChange={e => setNewBlock({...newBlock, reason: e.target.value})} className="bg-white" />
+                      </div>
+                      <Button type="submit" disabled={isBlocking || !newBlock.date} className="bg-red-500 hover:bg-red-600 text-white font-bold h-10 px-6">
+                        {isBlocking ? 'A Bloquear...' : 'Bloquear Agenda'}
+                      </Button>
+                    </div>
+                  </form>
+
+                  {/* Lista de Bloqueios Futuros */}
+                  {blocks.length > 0 && (
+                    <div className="mt-8 space-y-3">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Próximas Indisponibilidades</h4>
+                      {blocks.map(block => (
+                        <div key={block.id} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-red-200 transition-colors">
+                          <div className="flex items-center gap-4">
+                            <div className={`w-2 h-10 rounded-full ${block.instructor === 'Marisa' ? 'bg-[#0f5c4e]' : 'bg-[#7dd3fc]'}`}></div>
+                            <div>
+                              <p className="font-bold text-slate-800 text-sm">Dra. {block.instructor} • {format(new Date(block.date), 'dd/MM/yyyy')} ({block.startTime} às {block.endTime})</p>
+                              {block.reason && <p className="text-xs text-slate-500 mt-0.5">Motivo: {block.reason}</p>}
+                            </div>
+                          </div>
+                          <button onClick={() => handleRemoveBlock(block.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Remover bloqueio">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
               </div>
             )}
 

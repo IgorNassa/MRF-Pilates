@@ -5,7 +5,6 @@ import { getServerSession } from "next-auth"
 import { revalidatePath } from "next/cache"
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-
 const supabase = createSupabaseClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -70,7 +69,6 @@ export async function createClient(formData: FormData) {
   const condicoesMedicas = formData.get("condicoesMedicas") as string
   const fotoPerfil = formData.get("fotoPerfil") as string
 
-  // CORREÇÃO DA DATA: Converte o YYYY-MM-DD do HTML para o formato ISO do Prisma
   const dataNascimentoRaw = formData.get("dataNascimento") as string
   const dataNascimento = dataNascimentoRaw ? new Date(`${dataNascimentoRaw}T12:00:00Z`) : null
 
@@ -89,7 +87,7 @@ export async function createClient(formData: FormData) {
   await prisma.client.create({
     data: {
       name, email, phone, plan, status: "ativo", documento, cep, logradouro, numero, bairro, cidade, uf,
-      dataNascimento, // Agora vai no formato correto!
+      dataNascimento,
       contatoEmergencia, queixaPrincipal, condicoesMedicas, fotoPerfil,
       generalDocsLinks, examDocsLinks
     }
@@ -114,7 +112,6 @@ export async function updateClient(id: string, formData: FormData) {
   const condicoesMedicas = formData.get("condicoesMedicas") as string;
   const fotoPerfil = formData.get("fotoPerfil") as string;
 
-  // CORREÇÃO DA DATA: Converte o YYYY-MM-DD do HTML para o formato ISO do Prisma
   const dataNascimentoRaw = formData.get("dataNascimento") as string;
   const dataNascimento = dataNascimentoRaw ? new Date(`${dataNascimentoRaw}T12:00:00Z`) : null;
 
@@ -139,7 +136,7 @@ export async function updateClient(id: string, formData: FormData) {
       where: { id },
       data: {
         name, email, phone, plan, documento, cep, logradouro, numero, bairro, cidade, uf,
-        dataNascimento, // Agora vai no formato correto!
+        dataNascimento,
         contatoEmergencia, queixaPrincipal, condicoesMedicas, fotoPerfil,
         generalDocsLinks: updatedGeneralLinks, examDocsLinks: updatedExamLinks
       }
@@ -178,7 +175,6 @@ export async function getClients() {
 // ==========================================
 // 3. GESTÃO DE PLANOS & FINANCEIRO
 // ==========================================
-
 export async function atualizarPlanoCliente(clientId: string, novoPlano: string, parcelas: number, valorFinal: number, vencimento: number, paymentMethod: string) {
   try {
     let meses = 1;
@@ -231,7 +227,7 @@ export async function removerPlanoCliente(clientId: string) {
   try {
     await prisma.client.update({
       where: { id: clientId },
-      data: { plan: null, planValue: null, planInstallments: null, planInstallmentsPaid: null, planLastPayment: null, planDueDate: null, planPaymentMethod: null }
+      data: { plan: null, planValue: null, planInstallments: null, planInstallmentsPaid: null, planLastPayment: null, planDueDate: null, planPaymentMethod: null, totalSessions: 0, remainingSessions: 0 }
     })
     revalidatePath('/clientes')
     revalidatePath('/financeiro')
@@ -291,9 +287,14 @@ export async function desfazerPagamentoPlano(clientId: string) {
 
 export async function renovarPlanoCiclo(clientId: string) {
   try {
+    const client = await prisma.client.findUnique({ where: { id: clientId } });
     await prisma.client.update({
       where: { id: clientId },
-      data: { planInstallmentsPaid: 0, planLastPayment: new Date() }
+      data: { 
+        planInstallmentsPaid: 0, 
+        planLastPayment: new Date(),
+        remainingSessions: client?.totalSessions || 0 
+      }
     })
     revalidatePath('/financeiro')
     return { sucesso: true }
@@ -354,25 +355,14 @@ export async function confirmarPagamentoTransacao(id: string) {
 }
 
 // ==========================================
-// 4. EVOLUÇÕES E DÉBITO DE SALDO DE AULAS
+// 4. EVOLUÇÕES E GESTÃO DE AGENDAMENTOS
 // ==========================================
-
 export async function concluirSessaoComEvolucao(id: string, clientId?: string | null, evolucaoTexto?: string, instructor?: string) {
   try {
-    const appt = await prisma.appointment.update({ where: { id }, data: { status: 'REALIZADO' }, include: { client: true } })
-    
+    await prisma.appointment.update({ where: { id }, data: { status: 'REALIZADO' } })
     if (clientId && evolucaoTexto && evolucaoTexto.trim() !== '') {
       await prisma.evolution.create({ data: { clientId, description: evolucaoTexto, instructor: instructor || 'Sistema' } })
     }
-
-    // REGRA SÊNIOR: Debita 1 aula do plano do cliente!
-    if (clientId && appt.client?.plan && appt.client.remainingSessions > 0) {
-      await prisma.client.update({
-        where: { id: clientId },
-        data: { remainingSessions: { decrement: 1 } }
-      });
-    }
-
     revalidatePath('/agendamentos')
     revalidatePath('/financeiro')
     return { sucesso: true }
@@ -383,20 +373,7 @@ export async function concluirSessaoComEvolucao(id: string, clientId?: string | 
 
 export async function marcarFaltaAgendamento(id: string) {
   try {
-    const appt = await prisma.appointment.update({
-      where: { id },
-      data: { status: 'FALTA' },
-      include: { client: true }
-    });
-    
-    // REGRA SÊNIOR: Falta também debita aula do plano!
-    if (appt.clientId && appt.client?.plan && appt.client.remainingSessions > 0) {
-      await prisma.client.update({
-        where: { id: appt.clientId },
-        data: { remainingSessions: { decrement: 1 } }
-      });
-    }
-    
+    await prisma.appointment.update({ where: { id }, data: { status: 'FALTA' } });
     revalidatePath('/agendamentos');
     return { sucesso: true };
   } catch (error) {
@@ -406,10 +383,23 @@ export async function marcarFaltaAgendamento(id: string) {
 
 export async function cancelarAgendamento(id: string) {
   try {
-    await prisma.appointment.update({
+    const appt = await prisma.appointment.update({
       where: { id },
-      data: { status: 'CANCELADO' }
+      data: { status: 'CANCELADO' },
+      include: { client: true }
     });
+
+    // REGRA SÊNIOR: Se tem transação, é Avulsa. NÃO ESTORNA O SALDO.
+    const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
+    const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
+
+    if (appt.clientId && appt.client?.plan && isAulaDoPlano) {
+      await prisma.client.update({
+        where: { id: appt.clientId },
+        data: { remainingSessions: { increment: 1 } }
+      });
+    }
+
     revalidatePath('/agendamentos');
     return { sucesso: true };
   } catch (error) {
@@ -419,24 +409,11 @@ export async function cancelarAgendamento(id: string) {
 
 export async function converterEmReposicao(id: string) {
   try {
-    const appt = await prisma.appointment.findUnique({
-      where: { id },
-      include: { client: true }
-    });
-
+    const appt = await prisma.appointment.findUnique({ where: { id }, include: { client: true } });
     if (!appt || !appt.clientId) return { sucesso: false, erro: "Agendamento não encontrado." };
 
-    // Adiciona 1 crédito de reposição
-    await prisma.client.update({
-      where: { id: appt.clientId },
-      data: { repositionCredits: { increment: 1 } }
-    });
-
-    // Cancela a aula na grelha para libertar vaga
-    await prisma.appointment.update({
-      where: { id },
-      data: { status: 'CANCELADO' }
-    });
+    await prisma.client.update({ where: { id: appt.clientId }, data: { repositionCredits: { increment: 1 } } });
+    await prisma.appointment.update({ where: { id }, data: { status: 'CANCELADO' } });
 
     revalidatePath('/agendamentos');
     revalidatePath(`/clientes/${appt.clientId}`);
@@ -448,8 +425,22 @@ export async function converterEmReposicao(id: string) {
 
 export async function deletarAgendamento(id: string) {
   try {
+    const appt = await prisma.appointment.findUnique({ where: { id }, include: { client: true } });
+    
+    // Identifica se era Avulsa ANTES de apagar a transação
+    const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
+    const isAulaDoPlano = appt?.type && String(appt.type).includes('PILATES_') && !isAvulsa;
+
     await prisma.transaction.deleteMany({ where: { appointmentId: id } })
     await prisma.appointment.delete({ where: { id } })
+    
+    // Devolve para o saldo SOMENTE se não for Avulsa
+    if (appt && appt.status !== 'CANCELADO' && appt.clientId && appt.client?.plan && isAulaDoPlano) {
+      await prisma.client.update({
+        where: { id: appt.clientId },
+        data: { remainingSessions: { increment: 1 } }
+      });
+    }
     
     revalidatePath('/agendamentos') 
     revalidatePath('/financeiro') 
@@ -461,19 +452,21 @@ export async function deletarAgendamento(id: string) {
 
 export async function reverterAgendamento(id: string) {
   try {
+    const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
+
     const appt = await prisma.appointment.update({ 
       where: { id }, 
       data: { status: 'AGENDADO' },
       include: { client: true }
     })
     
-    await prisma.transaction.deleteMany({ where: { appointmentId: id } })
-    
-    // REGRA SÊNIOR: Se reverteu, devolve a aula ao saldo do paciente!
-    if (appt.clientId && appt.client?.plan) {
+    const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
+
+    // Consome do saldo novamente SOMENTE se não for Avulsa
+    if (appt.clientId && appt.client?.plan && isAulaDoPlano) {
       await prisma.client.update({
         where: { id: appt.clientId },
-        data: { remainingSessions: { increment: 1 } }
+        data: { remainingSessions: { decrement: 1 } }
       });
     }
     
@@ -536,22 +529,11 @@ export async function atualizarAgendamento(id: string, novaData: Date, novoInstr
       }
     });
 
-    if (existingAppts.length >= 4) {
-      return { sucesso: false, erro: "O horário selecionado já possui a capacidade máxima do estúdio (4 alunos)." };
-    }
-
+    if (existingAppts.length >= 4) return { sucesso: false, erro: "Lotação máxima (4 alunos)." };
     const instrCount = existingAppts.filter(a => a.instructor === novoInstrutor).length;
-    if (instrCount >= 2) {
-      return { sucesso: false, erro: `A Dra. ${novoInstrutor} já atingiu a capacidade máxima (2 alunos) neste horário.` };
-    }
+    if (instrCount >= 2) return { sucesso: false, erro: `A Dra. ${novoInstrutor} já atingiu o limite neste horário.` };
 
-    await prisma.appointment.update({ 
-      where: { id }, 
-      data: { 
-        date: novaData,
-        instructor: novoInstrutor
-      } 
-    })
+    await prisma.appointment.update({ where: { id }, data: { date: novaData, instructor: novoInstrutor } })
     revalidatePath('/agendamentos')
     return { sucesso: true }
   } catch (error) {
@@ -560,15 +542,27 @@ export async function atualizarAgendamento(id: string, novaData: Date, novoInstr
 }
 
 // ==========================================
-// 5. NOVO AGENDAMENTO COM SUPORTE A REPOSIÇÃO
+// 5. NOVO AGENDAMENTO INTELIGENTE (SEMANA/MES/TUDO) + AVULSAS
 // ==========================================
 export async function criarAgendamento(dados: any) {
   try {
-    const { tipoAgendamento, serviceType, clientId, tempName, tempPhone, instructorId, diasComHorarios, singleTime, fisioSessions, startDate, isReposicao } = dados;
+    const { 
+      tipoAgendamento, serviceType, clientId, tempName, tempPhone, instructorId, 
+      isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, 
+      startDate, useReposicao: paramUseReposicao, descontarDoPlano: paramDescontar, comecarHoje 
+    } = dados;
+
+    let useReposicao = paramUseReposicao;
+    let descontarDoPlano = paramDescontar;
+
+    // REGRA DE OURO DA AULA AVULSA:
+    if (isAgendamentoManual && serviceType === 'PILATES') {
+        descontarDoPlano = false;
+        useReposicao = false;
+    }
 
     let finalType: any = "EXPERIMENTAL";
     let clientPlanType = "PILATES_1X"; 
-    let isAvulso = false; 
     
     let precoPilatesAvulso = 100.00;
     let precoFisio = 150.00;
@@ -581,167 +575,155 @@ export async function criarAgendamento(dados: any) {
         precoFisio = Number(settings.priceFisio) || 150.00;
         precoExp = Number(settings.priceExp) || 50.00;
       }
-    } catch (e) {
-      console.log("Settings não encontradas. A usar preços base.");
-    }
+    } catch (e) {}
+
+    let clienteAtual = null;
     
     if (tipoAgendamento === 'REGULAR') {
       if (serviceType === 'FISIOTERAPIA') {
         finalType = "FISIO_SESSAO"; 
       } else {
-        const client = await prisma.client.findUnique({ where: { id: clientId } });
-        const p = client?.plan?.toUpperCase() || "";
+        clienteAtual = await prisma.client.findUnique({ where: { id: clientId } });
+        const p = clienteAtual?.plan?.toUpperCase() || "";
         if (p.includes("1X")) clientPlanType = "PILATES_1X";
         else if (p.includes("2X")) clientPlanType = "PILATES_2X";
         else if (p.includes("3X")) clientPlanType = "PILATES_3X";
         else if (p.includes("5X")) clientPlanType = "PILATES_5X";
-        
         finalType = clientPlanType; 
       }
     }
 
     let datesToCheck: { date: Date, instructor: string, clientId?: string }[] = [];
-
-    // --- CORREÇÃO DE FUSO HORÁRIO APLICADA AQUI ---
-    if (serviceType === 'FISIOTERAPIA') {
-      for (const session of fisioSessions) {
+    
+    if (isAgendamentoManual) {
+      for (const session of manualSessions) {
         if (!session.date || !session.timeSlot) continue;
         const [hora, minuto] = session.timeSlot.split(':');
-        // Força o fuso brasileiro adicionando -03:00 na string ISO
         const d = new Date(`${session.date}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
         datesToCheck.push({ date: d, instructor: instructorId, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined });
       }
-    } else if (serviceType === 'PILATES') {
+    } else if (serviceType === 'PILATES' && diasComHorarios && Object.keys(diasComHorarios).length > 0) {
       const diasMapa: Record<string, number> = { 'Dom': 0, 'Seg': 1, 'Ter': 2, 'Qua': 3, 'Qui': 4, 'Sex': 5, 'Sáb': 6 };
       
-      if (!diasComHorarios || Object.keys(diasComHorarios).length === 0) {
-        if (!singleTime) return { sucesso: false, erro: "Selecione o horário para a sessão avulsa." };
-        const [hora, minuto] = singleTime.split(':');
-        // Força fuso BR na Aula Avulsa
-        let d = new Date(`${startDate}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
-        datesToCheck.push({ date: d, instructor: instructorId, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined });
-        
-        isAvulso = true; 
-        
-      } else {
-        let mesesDuracao = 1;
-        if (clientId) {
-          const client = await prisma.client.findUnique({ where: { id: clientId } });
-          const planStr = client?.plan?.toUpperCase() || "";
-          if (planStr.includes("TRIMESTRAL")) mesesDuracao = 4;
-          if (planStr.includes("SEMESTRAL")) mesesDuracao = 6;
-        }
-        
-        const totalSemanas = mesesDuracao * 4;
-
-        for (const dia of Object.keys(diasComHorarios)) {
-          const diaNumero = diasMapa[dia];
-          const horarioDoDia = diasComHorarios[dia];
-          if (!horarioDoDia) continue;
-          
-          const [hora, minuto] = horarioDoDia.split(':');
-
-          // Resolve a matemática de dias usando UTC 12:00 (Meio-dia) para o dia nunca pular para frente ou para trás
-          const [ano, mes, diaDaData] = startDate.split('-').map(Number);
-          let d = new Date(Date.UTC(ano, mes - 1, diaDaData, 12, 0, 0)); 
-          
-          while (d.getUTCDay() !== diaNumero) { d.setUTCDate(d.getUTCDate() + 1); }
-
-          for (let i = 0; i < totalSemanas; i++) { 
-            const yyyy = d.getUTCFullYear();
-            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-            const dd = String(d.getUTCDate()).padStart(2, '0');
-            
-            // Força a criação da string final amarrada ao fuso do Brasil
-            const dataSalvar = new Date(`${yyyy}-${mm}-${dd}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
-            datesToCheck.push({ date: dataSalvar, instructor: instructorId, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined });
-            
-            d.setUTCDate(d.getUTCDate() + 7); // pula uma semana
-          }
-        }
-      }
-    }
-
-    if (datesToCheck.length > 0) {
-      const datesOnly = datesToCheck.map(d => d.date);
-      const minD = new Date(Math.min(...datesOnly.map(d => d.getTime())));
-      const maxD = new Date(Math.max(...datesOnly.map(d => d.getTime())));
+      let limiteAulas = Object.keys(diasComHorarios).length; 
       
-      const existingAppts = await prisma.appointment.findMany({
-          where: {
-              date: { gte: minD, lte: maxD },
-              status: { notIn: ['CANCELADO', 'FALTA'] }
-          },
-          select: { date: true, instructor: true, clientId: true }
-      });
+      if (tipoAgendamento === 'REGULAR' && clienteAtual) {
+         if (recorrenciaPeriodo === 'SEMANA') limiteAulas = Object.keys(diasComHorarios).length;
+         else if (recorrenciaPeriodo === 'MES') limiteAulas = Object.keys(diasComHorarios).length * 4;
+         else if (recorrenciaPeriodo === 'TUDO') limiteAulas = clienteAtual.remainingSessions;
+      }
 
-      const grouped = existingAppts.reduce((acc, curr) => {
-          const t = curr.date.getTime();
-          if (!acc[t]) acc[t] = [];
-          acc[t].push(curr);
-          return acc;
-      }, {} as Record<number, any[]>);
+      if (descontarDoPlano && clienteAtual) {
+          limiteAulas = Math.min(limiteAulas, clienteAtual.remainingSessions);
+      }
 
-      for (const req of datesToCheck) {
-          const t = req.date.getTime();
-          const inSlot = grouped[t] || [];
-          
-          // Formatação correta para a mensagem de erro
-          const diaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(req.date);
-          const horaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(req.date);
+      const [ano, mes, diaDaData] = startDate.split('-').map(Number);
+      let dataAtual = new Date(Date.UTC(ano, mes - 1, diaDaData, 12, 0, 0)); 
+      const agora = new Date();
 
-          if (req.clientId) {
-            const isClone = inSlot.some(a => a.clientId === req.clientId);
-            if (isClone) return { sucesso: false, erro: `O aluno já tem aula marcada dia ${diaStr} às ${horaStr}. Agendamento bloqueado.` };
-          }
-          if (inSlot.length >= 4) {
-              return { sucesso: false, erro: `Estúdio lotado (4/4) no dia ${diaStr} às ${horaStr}.` };
-          }
-          const instrCount = inSlot.filter(a => a.instructor === req.instructor).length;
-          if (instrCount >= 2) {
-              return { sucesso: false, erro: `A Dra. ${req.instructor} já tem 2 alunos marcados dia ${diaStr} às ${horaStr}.` };
-          }
-          inSlot.push({ date: req.date, instructor: req.instructor, clientId: req.clientId });
-          grouped[t] = inSlot;
+      let aulasGeradas = 0;
+      let diasSeguros = 0; 
+
+      while(aulasGeradas < limiteAulas && diasSeguros < 730) {
+         const diaSemanaNum = dataAtual.getUTCDay();
+         const diaSemanaStr = Object.keys(diasMapa).find(key => diasMapa[key] === diaSemanaNum);
+
+         if (diaSemanaStr && diasComHorarios[diaSemanaStr]) {
+            const isToday = dataAtual.getUTCDate() === agora.getDate() && dataAtual.getUTCMonth() === agora.getMonth() && dataAtual.getUTCFullYear() === agora.getFullYear();
+
+            if (isToday && !comecarHoje) {
+               // Pula o dia de hoje
+            } else {
+               const horarioDoDia = diasComHorarios[diaSemanaStr];
+               const [hora, minuto] = horarioDoDia.split(':');
+
+               const yyyy = dataAtual.getUTCFullYear();
+               const mm = String(dataAtual.getUTCMonth() + 1).padStart(2, '0');
+               const dd = String(dataAtual.getUTCDate()).padStart(2, '0');
+               
+               const dataSalvar = new Date(`${yyyy}-${mm}-${dd}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
+               datesToCheck.push({ date: dataSalvar, instructor: instructorId, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined });
+               
+               aulasGeradas++;
+            }
+         }
+         dataAtual.setUTCDate(dataAtual.getUTCDate() + 1);
+         diasSeguros++;
       }
     }
 
-    // REGRA SÊNIOR: GESTÃO DE CRÉDITO DE REPOSIÇÃO
-    if (isReposicao && clientId) {
-      const clienteData = await prisma.client.findUnique({ where: { id: clientId } });
-      const saldo = clienteData?.repositionCredits || 0;
-      const qtdNecessaria = datesToCheck.length;
+    if (datesToCheck.length === 0) return { sucesso: false, erro: "Nenhuma data selecionada ou o paciente não tem saldo suficiente." };
 
-      if (saldo < qtdNecessaria) {
-        return { sucesso: false, erro: `Saldo insuficiente. O aluno tem ${saldo} crédito(s) e você tenta marcar ${qtdNecessaria} reposições.` };
+    // --- LÓGICA DE DÉBITO ---
+    if (useReposicao && clientId) {
+      if (clienteAtual!.repositionCredits < datesToCheck.length) {
+        return { sucesso: false, erro: `Saldo de Reposição insuficiente. O paciente tem apenas ${clienteAtual!.repositionCredits} crédito(s).` };
       }
-
-      await prisma.client.update({
-        where: { id: clientId },
-        data: { repositionCredits: { decrement: qtdNecessaria } }
-      });
+      await prisma.client.update({ where: { id: clientId }, data: { repositionCredits: { decrement: datesToCheck.length } } });
+    } else if (descontarDoPlano && clientId) {
+      if (clienteAtual!.remainingSessions < datesToCheck.length) {
+        return { sucesso: false, erro: `Saldo do plano insuficiente. Tentativa de agendar ${datesToCheck.length} aulas, mas o saldo é ${clienteAtual!.remainingSessions}.` };
+      }
+      await prisma.client.update({ where: { id: clientId }, data: { remainingSessions: { decrement: datesToCheck.length } } });
     }
 
-    // --- SALVAR NO BANCO ---
+    // --- CHECAGEM DE LOTAÇÃO E BLOQUEIOS ---
+    const datesOnly = datesToCheck.map(d => d.date);
+    const minD = new Date(Math.min(...datesOnly.map(d => d.getTime())));
+    const maxD = new Date(Math.max(...datesOnly.map(d => d.getTime())));
+    
+    const existingAppts = await prisma.appointment.findMany({
+        where: { date: { gte: minD, lte: maxD }, status: { notIn: ['CANCELADO', 'FALTA'] } },
+        select: { date: true, instructor: true, clientId: true }
+    });
+
+    const blockedTimes = await prisma.instructorBlock.findMany({ where: { date: { gte: minD, lte: maxD } } });
+
+    const grouped = existingAppts.reduce((acc, curr) => {
+        const t = curr.date.getTime();
+        if (!acc[t]) acc[t] = [];
+        acc[t].push(curr);
+        return acc;
+    }, {} as Record<number, any[]>);
+
+    for (const req of datesToCheck) {
+        const t = req.date.getTime();
+        const inSlot = grouped[t] || [];
+        
+        const diaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(req.date);
+        const horaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(req.date);
+
+        const isBlockedByDoctor = blockedTimes.some(b => {
+            const bDateStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(b.date);
+            return b.instructor === req.instructor && bDateStr === diaStr && horaStr >= b.startTime && horaStr <= b.endTime;
+        });
+
+        if (isBlockedByDoctor) return { sucesso: false, erro: `A Dra. ${req.instructor} está marcada como Indisponível dia ${diaStr} às ${horaStr}.` };
+        if (req.clientId) {
+          const isClone = inSlot.some(a => a.clientId === req.clientId);
+          if (isClone) return { sucesso: false, erro: `O aluno já tem aula marcada dia ${diaStr} às ${horaStr}.` };
+        }
+        if (inSlot.length >= 4) return { sucesso: false, erro: `Estúdio lotado (4/4) no dia ${diaStr} às ${horaStr}.` };
+        const instrCount = inSlot.filter(a => a.instructor === req.instructor).length;
+        if (instrCount >= 2) return { sucesso: false, erro: `A Dra. ${req.instructor} já tem 2 alunos marcados dia ${diaStr} às ${horaStr}.` };
+        
+        inSlot.push({ date: req.date, instructor: req.instructor, clientId: req.clientId });
+        grouped[t] = inSlot;
+    }
+
     const transacoesFinanceiras = [];
     const apptsToCreate = datesToCheck.map(req => ({
           clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
           tempName: tipoAgendamento === 'EXPERIMENTAL' ? tempName : undefined,
           tempPhone: tipoAgendamento === 'EXPERIMENTAL' ? tempPhone : undefined,
-          instructor: req.instructor,
-          type: finalType as any, 
-          date: req.date,
-          status: 'AGENDADO' as any
+          instructor: req.instructor, type: finalType as any, date: req.date, status: 'AGENDADO' as any
         }));
     
-    const createdAppts = await Promise.all(
-      apptsToCreate.map(data => prisma.appointment.create({ data }))
-    );
+    const createdAppts = await Promise.all(apptsToCreate.map(data => prisma.appointment.create({ data })));
 
-    // --- GERAÇÃO FINANCEIRA ---
-    if (!isReposicao) {
+    if (!useReposicao && !descontarDoPlano) {
       for (const appt of createdAppts) {
-        if (finalType === 'FISIO_SESSAO' || finalType === 'EXPERIMENTAL' || isAvulso) {
+        if (finalType === 'FISIO_SESSAO' || finalType === 'EXPERIMENTAL' || (tipoAgendamento === 'REGULAR' && isAgendamentoManual)) {
           let amountToCharge = precoPilatesAvulso;
           let txTitle = 'Aula Avulsa de Pilates (Extra Plano)';
 
@@ -749,88 +731,104 @@ export async function criarAgendamento(dados: any) {
           if (finalType === 'EXPERIMENTAL') { amountToCharge = precoExp; txTitle = 'Sessão Experimental'; }
 
           transacoesFinanceiras.push({
-            title: txTitle,
-            amount: amountToCharge,
-            type: 'RECEITA',
-            category: 'SESSAO_AVULSA',
-            status: 'PENDENTE',
-            paymentMethod: 'PIX', 
-            clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
-            appointmentId: appt.id,
-            date: new Date()
+            title: txTitle, amount: amountToCharge, type: 'RECEITA', category: 'SESSAO_AVULSA', status: 'PENDENTE', paymentMethod: 'PIX', clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined, appointmentId: appt.id, date: new Date()
           });
         }
       }
     }
 
-    if (transacoesFinanceiras.length > 0) {
-      await prisma.transaction.createMany({ data: transacoesFinanceiras as any });
-    }
-    
-    revalidatePath('/agendamentos'); 
-    revalidatePath('/financeiro');
+    if (transacoesFinanceiras.length > 0) await prisma.transaction.createMany({ data: transacoesFinanceiras as any });
+    revalidatePath('/agendamentos'); revalidatePath('/financeiro');
     return { sucesso: true };
-
   } catch (erro) {
-    console.error("ERRO COMPLETO:", erro);
-    return { sucesso: false, erro: "Falha ao gravar no banco. Verifique os dados inseridos." };
+    return { sucesso: false, erro: "Falha ao gravar no banco. Verifique os conflitos de horário." };
   }
+}
+
+// ==========================================
+// 6. BLOQUEIOS DE AGENDA E CONFIGURAÇÕES
+// ==========================================
+export async function createInstructorBlock(data: { instructor: string, date: string, startTime: string, endTime: string, reason?: string }) {
+  try {
+    const dataBloqueio = new Date(`${data.date}T12:00:00-03:00`);
+    await prisma.instructorBlock.create({ data: { ...data, date: dataBloqueio } });
+    revalidatePath('/configuracoes'); revalidatePath('/agendamentos/novo');
+    return { sucesso: true };
+  } catch (error) { return { sucesso: false, erro: "Falha ao criar bloqueio." }; }
+}
+
+export async function getInstructorBlocks() {
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  return await prisma.instructorBlock.findMany({ where: { date: { gte: hoje } }, orderBy: { date: 'asc' } });
+}
+
+export async function deleteInstructorBlock(id: string) {
+  try {
+    await prisma.instructorBlock.delete({ where: { id } });
+    revalidatePath('/configuracoes'); revalidatePath('/agendamentos/novo');
+    return { sucesso: true };
+  } catch (error) { return { sucesso: false }; }
+}
+
+export async function getSettings() {
+  try {
+    let settings = await prisma.settings.findFirst();
+    if (!settings) {
+      settings = await prisma.settings.create({
+        data: {
+          studioName: "MRF Pilates", openTime: "07:00", closeTime: "19:00", priceFisio: 150.00, pricePilates: 100.00, priceExp: 50.00,
+          plan1xMensal: 150.00, plan1xTrimestral: 400.00, plan1xSemestral: 750.00, plan2xMensal: 250.00, plan2xTrimestral: 700.00, plan2xSemestral: 1300.00, plan3xMensal: 350.00, plan3xTrimestral: 1000.00, plan3xSemestral: 1800.00,
+          msgFatura: "Olá...", msgAtraso: "Olá...", msgConfirmacao: "Olá...", msgAniversario: "Parabéns...", msgProspeccao: "Olá..."
+        }
+      });
+    }
+    return settings;
+  } catch (error) { return null; }
 }
 
 export async function updateSettings(dados: any) {
   try {
     const settings = await prisma.settings.findFirst();
-    if (settings) {
-      await prisma.settings.update({ where: { id: settings.id }, data: dados });
-    } else {
-      await prisma.settings.create({ data: dados });
-    }
-    revalidatePath('/configuracoes');
-    revalidatePath('/agendamentos'); 
-    revalidatePath('/agendamentos/novo'); 
+    if (settings) await prisma.settings.update({ where: { id: settings.id }, data: dados });
+    else await prisma.settings.create({ data: dados });
+    revalidatePath('/configuracoes'); revalidatePath('/agendamentos'); revalidatePath('/agendamentos/novo'); 
     return { sucesso: true };
-  } catch (error) {
-    console.error("Erro ao atualizar configurações:", error);
-    return { sucesso: false, erro: "Falha ao salvar configurações" };
-  }
+  } catch (error) { return { sucesso: false }; }
 }
 
 export async function checkDailyAvailability(dateStr: string) {
   try {
-    // Força o servidor a buscar os dados amarrados ao Fuso Brasileiro e não ao UTC
     const startOfDay = new Date(`${dateStr}T00:00:00-03:00`);
     const endOfDay = new Date(`${dateStr}T23:59:59-03:00`);
 
     const appointments = await prisma.appointment.findMany({
-      where: {
-        date: { gte: startOfDay, lte: endOfDay },
-        status: { notIn: ['CANCELADO'] }
-      },
+      where: { date: { gte: startOfDay, lte: endOfDay }, status: { notIn: ['CANCELADO'] } },
       select: { date: true, instructor: true }
     });
+    const blocks = await prisma.instructorBlock.findMany({ where: { date: { gte: startOfDay, lte: endOfDay } } });
 
-    const availability: Record<string, { total: number, Marisa: number, Loani: number }> = {};
+    const availability: Record<string, { total: number, Marisa: number, Loani: number, MarisaBlocked: boolean, LoaniBlocked: boolean }> = {};
+    const horariosDisponiveisBase = ["07:30", "08:30", "09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
+
+    horariosDisponiveisBase.forEach(time => {
+      availability[time] = { total: 0, Marisa: 0, Loani: 0, MarisaBlocked: false, LoaniBlocked: false };
+      blocks.forEach(b => {
+        if (time >= b.startTime && time <= b.endTime) {
+          if (b.instructor === 'Marisa') availability[time].MarisaBlocked = true;
+          if (b.instructor === 'Loani') availability[time].LoaniBlocked = true;
+        }
+      });
+    });
 
     appointments.forEach(app => {
-      // Lê o horário do banco isolando o fuso de onde quer que o servidor esteja hospedado
-      const formatter = new Intl.DateTimeFormat('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      
-      const timeKey = formatter.format(app.date); // Devolve exatamente "07:30"
-      
-      if (!availability[timeKey]) availability[timeKey] = { total: 0, Marisa: 0, Loani: 0 };
-      
+      const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+      const timeKey = formatter.format(app.date);
+      if (!availability[timeKey]) availability[timeKey] = { total: 0, Marisa: 0, Loani: 0, MarisaBlocked: false, LoaniBlocked: false };
       availability[timeKey].total += 1;
       if (app.instructor === 'Marisa') availability[timeKey].Marisa += 1;
       if (app.instructor === 'Loani') availability[timeKey].Loani += 1;
     });
 
     return availability; 
-  } catch (error) {
-    console.error("Erro ao checar vagas:", error);
-    return {};
-  }
+  } catch (error) { return {}; }
 }
