@@ -1,4 +1,3 @@
-// app/agendamentos/AgendaTabs.tsx
 'use client'
 
 import { useState } from 'react'
@@ -154,14 +153,6 @@ export default function AgendaTabs({ initialAppointments = [] }: { initialAppoin
     }
   }
 
-  const handleConcluirIndividual = (appt: any) => {
-    setEvolutionDialog({ 
-      appts: [appt], 
-      evolutions: { [appt.id]: { evolucao: "", observacao: "" } },
-      selectedApptId: appt.id
-    })
-  }
-
   const nextWeek = () => setCurrentDate(addWeeks(currentDate, 1))
   const prevWeek = () => setCurrentDate(subWeeks(currentDate, 1))
   const goToToday = () => {
@@ -176,15 +167,15 @@ export default function AgendaTabs({ initialAppointments = [] }: { initialAppoin
   })
 
   const dailyAppointments = initialAppointments.filter(app => isSameDay(new Date(app.date), selectedDate))
-  const hours = ["07:00", "08:00", "09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+  
+  // CORREÇÃO: Nova Grade de Horários (50 minutos + 10 de intervalo)
+  const hours = [
+    "07:30", "08:30", "09:30", "10:30", "11:30",
+    "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"
+  ]
 
   return (
     <>
-      {/* =========================================================================
-          OS MODAIS ESTÃO AGORA NO TOPO E FORA DA DIV PRINCIPAL (z-[9999] garante 
-          que não sejam afetados pelo scroll ou pelas animações da página)
-      ========================================================================= */}
-      
       {errorDialog && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100">
@@ -431,9 +422,6 @@ export default function AgendaTabs({ initialAppointments = [] }: { initialAppoin
         </div>
       )}
 
-      {/* =========================================================================
-          DAQUI PARA BAIXO É O CONTEÚDO NORMAL DA PÁGINA
-      ========================================================================= */}
       <div className="space-y-6 animate-in fade-in duration-300 relative pb-32">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center gap-4 w-full lg:w-auto">

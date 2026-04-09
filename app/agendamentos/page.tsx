@@ -6,8 +6,14 @@ import { Sidebar } from '@/components/sidebar'
 import { Button } from '@/components/ui/button' 
 import { Plus } from 'lucide-react' 
 
+// 🔥 ESTAS 3 LINHAS MATAM O CACHE FANTASMA DO NEXT.JS
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+export const revalidate = 0
+
 export default async function AgendamentosPage() {
-  const appointments = await prisma.appointment.findMany({
+  // 1. Busca os dados no banco
+  const appointmentsRaw = await prisma.appointment.findMany({
     include: {
       client: {
         select: {
@@ -19,6 +25,15 @@ export default async function AgendamentosPage() {
     },
     orderBy: { date: 'asc' }
   });
+
+  // 2. Transforma as datas do servidor em texto ISO 
+  // Isso impede que o navegador se confunda com o fuso horário na hora de renderizar
+  const appointments = appointmentsRaw.map(app => ({
+    ...app,
+    date: app.date.toISOString(),
+    createdAt: app.createdAt.toISOString(),
+    updatedAt: app.updatedAt.toISOString(),
+  }));
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -42,7 +57,6 @@ export default async function AgendamentosPage() {
             </Button>
           </div>
           
-          {/* AQUI ESTAVA O ERRO DE NOME: Passamos initialAppointments */}
           <AgendaTabs initialAppointments={appointments} />
           
         </div>

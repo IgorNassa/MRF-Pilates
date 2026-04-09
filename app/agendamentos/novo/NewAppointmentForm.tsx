@@ -139,7 +139,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
   }
 
   // CORREÇÃO AQUI: Grade nova de 50 minutos
-  const horariosDisponiveisBase = ["07:30", "08:30", "09:30", "10:30", "14:00", "15:00", "16:00", "17:00", "18:00"]
+  const horariosDisponiveisBase = ["07:30", "08:30", "09:30", "10:30", "11:30", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
 
   const isPastDate = (dateString: string) => {
     if (!dateString || dateString.length < 10) return false; 
