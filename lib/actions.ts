@@ -175,7 +175,7 @@ export async function getClients() {
 // ==========================================
 // 3. GESTÃO DE PLANOS & FINANCEIRO
 // ==========================================
-export async function atualizarPlanoCliente(clientId: string, novoPlano: string, parcelas: number, valorFinal: number, vencimento: number, paymentMethod: string) {
+export async function atualizarPlanoCliente(clientId: string, novoPlano: string, parcelas: number, valorFinal: number, vencimento: number, paymentMethod: string, isPendente: boolean = false) {
   try {
     let meses = 1;
     if (novoPlano.toUpperCase().includes("TRIMESTRAL")) meses = 4;
@@ -188,12 +188,18 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
     if (novoPlano.toUpperCase().includes("5X")) frequencia = 5;
 
     const totalAulas = meses * 4 * frequencia; 
+    
+    // Se o pagamento for isento, não pode estar pendente.
+    const statusFinal = (paymentMethod === 'ISENTO') ? 'ISENTO' : (isPendente ? 'PENDENTE' : 'PAGO');
+    
+    // O pagamento só é considerado "pago" na assinatura do plano se o statusFinal for "PAGO" ou "ISENTO"
+    const parcelasPagas = (statusFinal === 'PAGO' || statusFinal === 'ISENTO') ? 1 : 0;
 
     await prisma.client.update({
       where: { id: clientId },
       data: { 
         plan: novoPlano, planValue: valorFinal, planInstallments: parcelas, planPaymentMethod: paymentMethod,
-        planInstallmentsPaid: 1, planLastPayment: new Date(), planDueDate: vencimento,
+        planInstallmentsPaid: parcelasPagas, planLastPayment: new Date(), planDueDate: vencimento,
         totalSessions: totalAulas, 
         remainingSessions: totalAulas 
       }
@@ -207,7 +213,7 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
           amount: paymentMethod === 'ISENTO' ? 0 : valorFinal,
           type: 'RECEITA',
           category: 'MENSALIDADE',
-          status: paymentMethod === 'ISENTO' ? 'ISENTO' : 'PAGO', 
+          status: statusFinal as any, 
           paymentMethod: paymentMethod,
           clientId: clientId,
           date: new Date() 
@@ -237,12 +243,17 @@ export async function removerPlanoCliente(clientId: string) {
   }
 }
 
-export async function pagarParcelaPlano(clientId: string, valor: number, isento: boolean) {
+export async function pagarParcelaPlano(clientId: string, valor: number, isento: boolean, isPendente: boolean = false) {
   try {
     const client = await prisma.client.findUnique({ where: { id: clientId } })
     if (!client) throw new Error("Cliente não encontrado")
 
-    const novaParcelaPaga = (client.planInstallmentsPaid || 0) + 1
+    const statusFinal = isento ? 'ISENTO' : (isPendente ? 'PENDENTE' : 'PAGO');
+    
+    // Só atualiza a contagem de parcelas se o pagamento não for pendente
+    const novaParcelaPaga = (statusFinal === 'PAGO' || statusFinal === 'ISENTO') 
+      ? (client.planInstallmentsPaid || 0) + 1 
+      : (client.planInstallmentsPaid || 0);
 
     await prisma.client.update({
       where: { id: clientId },
@@ -250,13 +261,15 @@ export async function pagarParcelaPlano(clientId: string, valor: number, isento:
     })
 
     const isMensal = client.plan?.toUpperCase().includes('MENSAL');
+    const proxParcela = (client.planInstallmentsPaid || 0) + 1;
+    
     await prisma.transaction.create({
       data: {
-        title: isMensal ? `Mensalidade ${novaParcelaPaga} - ${client.plan}` : `Renovação - ${client.plan}`,
+        title: isMensal ? `Mensalidade ${proxParcela} - ${client.plan}` : `Renovação - ${client.plan}`,
         amount: isento ? 0 : valor,
         type: 'RECEITA',
         category: 'MENSALIDADE',
-        status: isento ? 'ISENTO' : 'PAGO',
+        status: statusFinal as any,
         paymentMethod: isento ? 'ISENTO' : (client.planPaymentMethod || 'PIX'),
         clientId: clientId,
         date: new Date()
@@ -336,8 +349,24 @@ export async function atualizarTransacao(id: string, data: any) {
 
 export async function deletarTransacao(id: string) {
   try {
+    // Busca a transação antes de deletar
+    const tx = await prisma.transaction.findUnique({ where: { id } });
+    if (!tx) return { sucesso: false, erro: "Transação não encontrada" };
+
+    // Se for uma mensalidade/plano que estava PAGA, precisamos desfazer a parcela no cliente
+    if (tx.category === 'MENSALIDADE' && tx.status === 'PAGO' && tx.clientId) {
+        const client = await prisma.client.findUnique({ where: { id: tx.clientId } });
+        if (client && client.planInstallmentsPaid && client.planInstallmentsPaid > 0) {
+            await prisma.client.update({
+                where: { id: tx.clientId },
+                data: { planInstallmentsPaid: client.planInstallmentsPaid - 1 }
+            });
+        }
+    }
+
     await prisma.transaction.delete({ where: { id } })
     revalidatePath('/financeiro')
+    revalidatePath('/clientes')
     return { sucesso: true }
   } catch (error) {
     return { sucesso: false, erro: "Falha ao excluir" }
@@ -346,8 +375,24 @@ export async function deletarTransacao(id: string) {
 
 export async function confirmarPagamentoTransacao(id: string) {
   try {
+    const tx = await prisma.transaction.findUnique({ where: { id } });
+    if (!tx) return { sucesso: false, erro: "Transação não encontrada" };
+
     await prisma.transaction.update({ where: { id }, data: { status: 'PAGO' } })
+    
+    // Se confirmou o pagamento de um plano/mensalidade, adiciona 1 na parcela do cliente
+    if (tx.category === 'MENSALIDADE' && tx.clientId) {
+       const client = await prisma.client.findUnique({ where: { id: tx.clientId } });
+       if (client) {
+          await prisma.client.update({
+             where: { id: tx.clientId },
+             data: { planInstallmentsPaid: (client.planInstallmentsPaid || 0) + 1, planLastPayment: new Date() }
+          });
+       }
+    }
+
     revalidatePath('/financeiro')
+    revalidatePath('/clientes')
     return { sucesso: true }
   } catch (error) {
     return { sucesso: false, erro: "Falha ao confirmar" }
@@ -389,7 +434,6 @@ export async function cancelarAgendamento(id: string) {
       include: { client: true }
     });
 
-    // REGRA SÊNIOR: Se tem transação, é Avulsa. NÃO ESTORNA O SALDO.
     const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
     const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
 
@@ -427,14 +471,12 @@ export async function deletarAgendamento(id: string) {
   try {
     const appt = await prisma.appointment.findUnique({ where: { id }, include: { client: true } });
     
-    // Identifica se era Avulsa ANTES de apagar a transação
     const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
     const isAulaDoPlano = appt?.type && String(appt.type).includes('PILATES_') && !isAvulsa;
 
     await prisma.transaction.deleteMany({ where: { appointmentId: id } })
     await prisma.appointment.delete({ where: { id } })
     
-    // Devolve para o saldo SOMENTE se não for Avulsa
     if (appt && appt.status !== 'CANCELADO' && appt.clientId && appt.client?.plan && isAulaDoPlano) {
       await prisma.client.update({
         where: { id: appt.clientId },
@@ -462,7 +504,6 @@ export async function reverterAgendamento(id: string) {
     
     const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
 
-    // Consome do saldo novamente SOMENTE se não for Avulsa
     if (appt.clientId && appt.client?.plan && isAulaDoPlano) {
       await prisma.client.update({
         where: { id: appt.clientId },
@@ -549,7 +590,8 @@ export async function criarAgendamento(dados: any) {
     const { 
       tipoAgendamento, serviceType, clientId, tempName, tempPhone, instructorId, 
       isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, 
-      startDate, useReposicao: paramUseReposicao, descontarDoPlano: paramDescontar, comecarHoje 
+      startDate, useReposicao: paramUseReposicao, descontarDoPlano: paramDescontar, comecarHoje,
+      valorPersonalizado // NOVO: Valor da aula experimental/avulsa
     } = dados;
 
     let useReposicao = paramUseReposicao;
@@ -576,6 +618,13 @@ export async function criarAgendamento(dados: any) {
         precoExp = Number(settings.priceExp) || 50.00;
       }
     } catch (e) {}
+
+    // Usa o valor personalizado se ele foi enviado pelo frontend
+    if (valorPersonalizado !== undefined && valorPersonalizado !== null) {
+      if (tipoAgendamento === 'EXPERIMENTAL') precoExp = Number(valorPersonalizado);
+      else if (serviceType === 'FISIOTERAPIA') precoFisio = Number(valorPersonalizado);
+      else precoPilatesAvulso = Number(valorPersonalizado);
+    }
 
     let clienteAtual = null;
     

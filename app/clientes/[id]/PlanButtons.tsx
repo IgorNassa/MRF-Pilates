@@ -4,9 +4,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Trash2, Save, Crown, AlertTriangle, CheckSquare, Square, CreditCard } from 'lucide-react'
+import { Trash2, Save, Crown, AlertTriangle, CheckSquare, Square, CreditCard, Clock } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { atualizarPlanoCliente, removerPlanoCliente } from '@/lib/actions'
 
 export default function PlanButtons({ clientId, currentPlan, planValue, planInstallments, planInstallmentsPaid, planDueDate, planPaymentMethod, settings }: any) {
@@ -19,6 +20,7 @@ export default function PlanButtons({ clientId, currentPlan, planValue, planInst
   const [selectedPlan, setSelectedPlan] = useState(currentPlan || '')
   const [vencimento, setVencimento] = useState(planDueDate?.toString() || '10')
   const [isento, setIsento] = useState(planValue === 0)
+  const [isPendente, setIsPendente] = useState(false) // NOVA OPÇÃO
   
   const [paymentMethod, setPaymentMethod] = useState(planPaymentMethod || 'PIX')
   
@@ -59,7 +61,8 @@ export default function PlanButtons({ clientId, currentPlan, planValue, planInst
   const handleSave = async () => {
     if(!selectedPlan) return
     setIsSubmitting(true)
-    await atualizarPlanoCliente(clientId, selectedPlan, divisorParcelas, valorFinal, parseInt(vencimento), isento ? 'ISENTO' : paymentMethod)
+    // Envia o novo campo de isPendente para a action
+    await atualizarPlanoCliente(clientId, selectedPlan, divisorParcelas, valorFinal, parseInt(vencimento), isento ? 'ISENTO' : paymentMethod, isPendente)
     setIsModalOpen(false)
     setIsSubmitting(false)
     router.refresh()
@@ -170,10 +173,21 @@ export default function PlanButtons({ clientId, currentPlan, planValue, planInst
                     </div>
                   )}
 
-                  <div className="flex items-center mt-2">
-                    <button onClick={() => setIsento(!isento)} className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-[#0f5c4e] transition-colors">
+                  <div className="flex flex-col gap-3 mt-4">
+                    <button onClick={() => { setIsento(!isento); if(!isento) setIsPendente(false); }} className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-[#0f5c4e] transition-colors w-fit">
                       {isento ? <CheckSquare className="w-5 h-5 text-[#0f5c4e]" /> : <Square className="w-5 h-5 text-slate-400" />} Paciente Isento (Cortesia / Bolsista)
                     </button>
+
+                    {!isento && (
+                      <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer w-fit">
+                        <Checkbox 
+                          checked={isPendente} 
+                          onCheckedChange={(c) => setIsPendente(c === true)} 
+                          className="w-5 h-5 rounded data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500" 
+                        />
+                        <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-amber-500"/> Gerar transação como Pendente (Paga depois)</span>
+                      </label>
+                    )}
                   </div>
 
                   <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl text-sm">
@@ -185,8 +199,12 @@ export default function PlanButtons({ clientId, currentPlan, planValue, planInst
                         <span>Abatimento (Já pago):</span> <strong>- R$ {valorJaPago.toFixed(2)}</strong>
                       </div>
                     )}
-                    <div className="flex justify-between text-emerald-900 font-black mt-2 text-base">
-                      <span>A Cobrar:</span> <span>{isento ? 'ISENTO' : `R$ ${valorFinal.toFixed(2)}`}</span>
+                    <div className="flex justify-between text-emerald-900 font-black mt-2 text-base items-center">
+                      <span>A Cobrar:</span> 
+                      <div className="flex items-center gap-2">
+                        {isPendente && <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded uppercase tracking-wider">A Pagar</span>}
+                        <span>{isento ? 'ISENTO' : `R$ ${valorFinal.toFixed(2)}`}</span>
+                      </div>
                     </div>
                     {!isento && isCredito && divisorParcelas > 1 && (
                       <div className="text-right text-xs font-bold mt-1 flex flex-col items-end">

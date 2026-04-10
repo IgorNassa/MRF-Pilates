@@ -27,6 +27,9 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
   const [serviceType, setServiceType] = useState<'PILATES' | 'FISIOTERAPIA'>('PILATES')
   const [instructorId, setInstructorId] = useState('Marisa')
   
+  // Opção para alterar o preço livremente
+  const [valorPersonalizado, setValorPersonalizado] = useState('')
+  
   const [isAgendamentoManual, setIsAgendamentoManual] = useState(false)
   const [manualSessions, setManualSessions] = useState<ManualSession[]>([{ id: Date.now(), date: format(new Date(), 'yyyy-MM-dd'), timeSlot: '', duration: 50 }])
   
@@ -140,7 +143,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
     const dadosParaSalvar = {
       tipoAgendamento, serviceType, clientId: selectedClientId, tempName, tempPhone, instructorId,
       isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, startDate: startDatePilates, 
-      useReposicao, descontarDoPlano, comecarHoje 
+      useReposicao, descontarDoPlano, comecarHoje, valorPersonalizado: valorPersonalizado ? Number(valorPersonalizado) : undefined
     }
 
     const resultado = await criarAgendamento(dadosParaSalvar)
@@ -162,8 +165,8 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
     <div className="max-w-3xl mx-auto space-y-6">
       
       <div className="flex p-1.5 bg-slate-100 rounded-xl w-fit shadow-inner">
-        <button type="button" onClick={() => setTipoAgendamento('REGULAR')} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${tipoAgendamento === 'REGULAR' ? 'bg-white text-[#0f5c4e] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Aluno Regular</button>
-        <button type="button" onClick={() => { setTipoAgendamento('EXPERIMENTAL'); setServiceType('PILATES'); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${tipoAgendamento === 'EXPERIMENTAL' ? 'bg-white text-[#0f5c4e] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Experimental / Rápida</button>
+        <button type="button" onClick={() => { setTipoAgendamento('REGULAR'); setValorPersonalizado(''); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${tipoAgendamento === 'REGULAR' ? 'bg-white text-[#0f5c4e] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Aluno Regular</button>
+        <button type="button" onClick={() => { setTipoAgendamento('EXPERIMENTAL'); setServiceType('PILATES'); setValorPersonalizado(''); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${tipoAgendamento === 'EXPERIMENTAL' ? 'bg-white text-[#0f5c4e] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Experimental / Rápida</button>
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8 space-y-8">
@@ -180,8 +183,6 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
               
               {selectedClientData && (
                 <div className="flex flex-col gap-2 mt-3">
-                  
-                  {/* Se a opção de Aula Avulsa for ativada, escondemos a caixa de descontar do plano para deixar claro que é uma aula extra paga! */}
                   {!isAgendamentoManual && selectedClientData.plan && serviceType === 'PILATES' && (
                     <div className="bg-[#0f5c4e]/5 border border-[#0f5c4e]/20 p-4 rounded-xl mt-2 animate-in fade-in">
                       <label className="flex items-center justify-between cursor-pointer">
@@ -232,7 +233,21 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
         </div>
 
         <div className="p-5 bg-[#0f5c4e]/5 rounded-xl border border-[#0f5c4e]/20">
-          <h3 className="flex items-center gap-2 text-lg font-bold text-[#0f5c4e] mb-4"><Clock className="w-5 h-5" /> 3. Datas e Horários</h3>
+          <h3 className="flex items-center justify-between text-lg font-bold text-[#0f5c4e] mb-4">
+            <span className="flex items-center gap-2"><Clock className="w-5 h-5" /> 3. Datas e Horários</span>
+            {/* VALOR PERSONALIZADO PARA AVULSO/EXPERIMENTAL */}
+            {(tipoAgendamento === 'EXPERIMENTAL' || isAgendamentoManual) && (
+              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm animate-in fade-in">
+                <span className="text-xs font-bold text-slate-500">Valor Cobrado: R$</span>
+                <input 
+                  type="number" placeholder="Padrão"
+                  value={valorPersonalizado} 
+                  onChange={e => setValorPersonalizado(e.target.value)}
+                  className="w-16 text-sm font-bold text-[#0f5c4e] outline-none bg-transparent placeholder:text-slate-300"
+                />
+              </div>
+            )}
+          </h3>
           
           <div className="space-y-6">
             
@@ -243,9 +258,10 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
                     setIsAgendamentoManual(c === true);
                     if (c === true) {
                       setDescontarDoPlano(false);
-                      setUseReposicao(false); // Desmarca tudo para garantir que vai gerar cobrança, a menos que ele marque propositalmente de novo
+                      setUseReposicao(false);
                     } else {
                       if (selectedClientData?.remainingSessions > 0) setDescontarDoPlano(true);
+                      setValorPersonalizado('');
                     }
                   }} className="w-5 h-5 text-[#0f5c4e] data-[state=checked]:bg-[#0f5c4e] border-slate-300 rounded" />
                   Agendar Aula(s) Avulsa(s) / Extra (Gerar Cobrança)
