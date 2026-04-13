@@ -5,36 +5,40 @@ import Link from 'next/link'
 import { Sidebar } from '@/components/sidebar'
 import { Button } from '@/components/ui/button' 
 import { Plus } from 'lucide-react' 
-import { unstable_noStore as noStore } from 'next/cache'
+import { getSettings } from '@/lib/actions' // <--- IMPORTAMOS AS CONFIGS AQUI
 
+// 🔥 ESTAS 3 LINHAS MATAM O CACHE FANTASMA DO NEXT.JS
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 export const revalidate = 0
 
 export default async function AgendamentosPage() {
-  noStore(); // Mata o cache da Vercel para garantir dados ao vivo
-
+  // 1. Busca os dados no banco
   const appointmentsRaw = await prisma.appointment.findMany({
     include: {
       client: {
         select: {
           id: true,
           name: true,
-          plan: true
+          plan: true,
+          phone: true 
         }
       }
     },
     orderBy: { date: 'asc' }
   });
 
-  // O segredo está aqui: toISOString() mantém o "Z" (UTC) no final.
-  // O navegador (no Brasil) vai ver o "Z" e subtrair 3 horas automaticamente!
+  // 2. Transforma as datas do servidor em texto ISO 
   const appointments = appointmentsRaw.map(app => ({
     ...app,
-    date: app.date.toISOString(), 
+    date: app.date.toISOString(),
     createdAt: app.createdAt.toISOString(),
     updatedAt: app.updatedAt.toISOString(),
   }));
+
+  // 3. BUSCA O TEMPLATE DA MENSAGEM NAS CONFIGURAÇÕES
+  const settings = await getSettings();
+  const msgConfirmacao = settings?.msgConfirmacao || "Olá [NOME], passando para confirmar sua sessão de Pilates hoje às [HORA].";
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -58,7 +62,8 @@ export default async function AgendamentosPage() {
             </Button>
           </div>
           
-          <AgendaTabs initialAppointments={appointments} />
+          {/* PASSAMOS A MENSAGEM COMO PROP PARA A AGENDA */}
+          <AgendaTabs initialAppointments={appointments} msgConfirmacao={msgConfirmacao} />
           
         </div>
       </main>

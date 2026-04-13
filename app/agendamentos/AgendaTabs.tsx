@@ -6,7 +6,7 @@ import { ptBR } from 'date-fns/locale'
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, User, Clock, Activity, Edit, Trash2, 
   UserX, CheckCircle2, Lock, XCircle, RotateCcw, Play, Users, AlertCircle, X as CloseIcon,
-  Stethoscope, FileText
+  Stethoscope, FileText, MessageCircle
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -22,7 +22,7 @@ interface EvolutionData {
   observacao: string;
 }
 
-export default function AgendaTabs({ initialAppointments = [] }: { initialAppointments: any[] }) {
+export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = "" }: { initialAppointments: any[], msgConfirmacao?: string }) {
   const router = useRouter()
   const { timerSeconds, isTimerRunning, startClass, timerHour, stopClass, formatTime } = useTimer()
 
@@ -168,7 +168,6 @@ export default function AgendaTabs({ initialAppointments = [] }: { initialAppoin
 
   const dailyAppointments = initialAppointments.filter(app => isSameDay(new Date(app.date), selectedDate))
   
-  // CORREÇÃO: Nova Grade de Horários (50 minutos + 10 de intervalo)
   const hours = [
     "07:30", "08:30", "09:30", "10:30", "11:30",
     "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"
@@ -504,10 +503,34 @@ export default function AgendaTabs({ initialAppointments = [] }: { initialAppoin
                               const diffHoras = (new Date(appt.date).getTime() - new Date().getTime()) / (1000 * 60 * 60)
                               const isLocked = diffHoras < 24 && diffHoras > -1 
 
+                              // LÓGICA DO WHATSAPP COM AS TAGS DO SISTEMA DE CONFIGURAÇÕES
+                              const phoneRaw = appt.client?.phone || appt.tempPhone;
+                              const cleanPhone = phoneRaw ? phoneRaw.replace(/\D/g, '') : null;
+                              const clientFirstName = (appt.client?.name || appt.tempName || 'Paciente').split(' ')[0];
+                              const apptTime = format(new Date(appt.date), 'HH:mm');
+                              const apptDate = format(new Date(appt.date), 'dd/MM/yyyy');
+                              
+                              let wppMsg = msgConfirmacao
+                                .replace(/\[NOME\]/g, clientFirstName)
+                                .replace(/\[HORA\]/g, apptTime)
+                                .replace(/\[DATA\]/g, apptDate);
+                                
+                              const wppUrl = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(wppMsg)}` : '#';
+
                               return (
                                 <div key={appt.id} className={`group relative p-4 rounded-xl border transition-all ${isCancelado ? 'bg-red-50/40 border-red-100 opacity-50' : isRealizado ? 'bg-emerald-50 border-emerald-100 shadow-sm' : isFalta ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200 hover:shadow-md'}`}>
                                   
                                   <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-white border border-slate-200 p-1.5 rounded-lg shadow-xl z-20 scale-90 group-hover:scale-100">
+                                    
+                                    {/* BOTÃO DO WHATSAPP */}
+                                    {cleanPhone && !isRealizado && !isCancelado && !isFalta && (
+                                        <span title="Enviar Lembrete por WhatsApp">
+                                          <a href={wppUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 flex text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition-colors border border-transparent hover:border-emerald-100">
+                                            <MessageCircle className="w-4 h-4" />
+                                          </a>
+                                        </span>
+                                    )}
+
                                     {!isRealizado && !isCancelado && (
                                       <span title="Concluir e Evoluir">
                                           <button onClick={() => setConfirmDialog({ title: 'Atenção', message: 'Use o botão de Gerir Turma (à esquerda) para preencher a evolução completa.', action: async () => setConfirmDialog(null) })} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors border border-transparent hover:border-emerald-100"><CheckCircle2 className="w-4 h-4" /></button>
