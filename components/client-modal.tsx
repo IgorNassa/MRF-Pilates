@@ -101,9 +101,6 @@ export function ClientModal({ isOpen, onClose, clientData }: ClientModalProps) {
     else setExamFiles(prev => prev.filter((_, i) => i !== index));
   }
 
-  // ==========================================
-  // FUNÇÃO: DELETAR DOCUMENTO DA NUVEM (SUPABASE)
-  // ==========================================
   const handleDeleteDoc = async (url: string, type: 'general' | 'exam') => {
     if (!clientData?.id) return
     if (!confirm("Tem certeza que deseja excluir este documento permanentemente?")) return
@@ -113,7 +110,7 @@ export function ClientModal({ isOpen, onClose, clientData }: ClientModalProps) {
       await deleteClientDocument(clientData.id, url, type)
       alert("Documento excluído com sucesso!")
       router.refresh()
-      onClose() // Fecha o modal para forçar a atualização visual dos dados
+      onClose()
     } catch (error) {
       alert("Erro ao excluir o documento.")
     } finally {
@@ -129,7 +126,6 @@ export function ClientModal({ isOpen, onClose, clientData }: ClientModalProps) {
     const formData = new FormData(e.currentTarget)
     formData.set("documento", cpfValue); formData.set("logradouro", endereco.logradouro); formData.set("bairro", endereco.bairro); formData.set("cidade", endereco.cidade); formData.set("uf", endereco.uf); formData.set("fotoPerfil", fotoPerfilBase64)
 
-    // Adiciona os arquivos reais no FormData
     generalFiles.forEach(file => formData.append("general_docs", file));
     examFiles.forEach(file => formData.append("exam_docs", file));
 
@@ -253,8 +249,9 @@ export function ClientModal({ isOpen, onClose, clientData }: ClientModalProps) {
             <div className={`space-y-5 sm:space-y-6 animate-in fade-in duration-300 ${activeTab !== "faturamento" && "hidden"}`}>
               <div className="grid grid-cols-1 gap-5 sm:gap-6 sm:grid-cols-2">
                 <div className="space-y-1.5 sm:space-y-2">
-                  <label className="text-sm font-semibold text-foreground">CPF *</label>
-                  <input name="documento" required value={cpfValue} onChange={handleCpfChange} onBlur={handleCpfBlur} className={`w-full h-11 sm:h-12 rounded-xl border p-3.5 outline-none transition-all duration-200 hover:bg-muted/30 ${cpfError ? "border-destructive focus:ring-2 focus:ring-destructive bg-destructive/5" : "border-border focus:ring-2 focus:ring-primary"}`} maxLength={14} />
+                  <label className="text-sm font-semibold text-foreground">CPF</label>
+                  {/* Removido o atributo `required` do campo de CPF abaixo */}
+                  <input name="documento" value={cpfValue} onChange={handleCpfChange} onBlur={handleCpfBlur} className={`w-full h-11 sm:h-12 rounded-xl border p-3.5 outline-none transition-all duration-200 hover:bg-muted/30 ${cpfError ? "border-destructive focus:ring-2 focus:ring-destructive bg-destructive/5" : "border-border focus:ring-2 focus:ring-primary"}`} maxLength={14} />
                   {cpfError && <p className="text-xs text-destructive mt-1.5 font-medium">{cpfError}</p>}
                 </div>
                 <div className="space-y-1.5 sm:space-y-2">
@@ -285,8 +282,6 @@ export function ClientModal({ isOpen, onClose, clientData }: ClientModalProps) {
 
             {/* ABA 4: DOCUMENTOS GERAIS */}
             <div className={`animate-in fade-in duration-300 ${activeTab !== "documentos" && "hidden"}`}>
-              
-              {/* Lista de Documentos Antigos na Nuvem */}
               {clientData?.generalDocsLinks && clientData.generalDocsLinks.length > 0 && (
                 <div className="mb-6 space-y-2">
                   <h4 className="text-sm font-semibold text-muted-foreground">Documentos Salvos na Nuvem</h4>
@@ -321,8 +316,6 @@ export function ClientModal({ isOpen, onClose, clientData }: ClientModalProps) {
 
             {/* ABA 5: EXAMES E LAUDOS */}
             <div className={`animate-in fade-in duration-300 ${activeTab !== "exames" && "hidden"}`}>
-              
-              {/* Lista de Exames Antigos na Nuvem */}
               {clientData?.examDocsLinks && clientData.examDocsLinks.length > 0 && (
                 <div className="mb-6 space-y-2">
                   <h4 className="text-sm font-semibold text-muted-foreground">Exames Salvos na Nuvem</h4>
