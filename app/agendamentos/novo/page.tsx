@@ -7,8 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getClients } from "@/lib/actions";
 import NewAppointmentForm from "./NewAppointmentForm";
+import { unstable_noStore as noStore } from 'next/cache'
+
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+export const revalidate = 0
 
 export default async function NovoAgendamentoPage() {
+  noStore();
   const clients = await getClients();
 
   return (
