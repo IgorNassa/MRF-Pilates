@@ -6,15 +6,25 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Clock, CalendarDays, UserSquare2, AlertCircle, Plus, Trash2, CalendarSync } from 'lucide-react'
+import { Clock, CalendarDays, UserSquare2, AlertCircle, Plus, Trash2, CalendarSync, CheckCircle2, XCircle } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { criarAgendamento, checkDailyAvailability } from '@/lib/actions'
+import { validarAgendamentosPreview, checkDailyAvailability, efetivarAgendamentos } from '@/lib/actions'
 import { format } from 'date-fns'
 
 interface Appointment { date: Date | string; status: string; }
 interface Client { id: string; name: string; plan?: string | null; repositionCredits: number; remainingSessions: number; appointments?: Appointment[] }
 interface ManualSession { id: number; date: string; timeSlot: string; duration: number }
+
+type PreviewSession = {
+  id: string;
+  dateStr: string;
+  timeStr: string;
+  instructor: string;
+  status: 'OK' | 'LOTADO' | 'INSTRUTOR_LOTADO' | 'BLOQUEADO' | 'DUPLICADO';
+  errorMsg: string;
+  diaFormatado: string;
+}
 
 export default function NewAppointmentForm({ clients = [] }: { clients: Client[] }) {
   const router = useRouter()
@@ -27,7 +37,6 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
   const [serviceType, setServiceType] = useState<'PILATES' | 'FISIOTERAPIA'>('PILATES')
   const [instructorId, setInstructorId] = useState('Marisa')
   
-  // Opção para alterar o preço livremente
   const [valorPersonalizado, setValorPersonalizado] = useState('')
   
   const [isAgendamentoManual, setIsAgendamentoManual] = useState(false)
@@ -46,6 +55,14 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState('') 
   const [dayStats, setDayStats] = useState<Record<string, any>>({})
+
+  // Modal States
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewSession[]>([]);
+  const [expandedCardIndex, setExpandedCardIndex] = useState<number | null>(null);
+  const [editSessionData, setEditSessionData] = useState({ dateStr: '', timeStr: '' });
+  const [isCheckingSlot, setIsCheckingSlot] = useState(false);
+  const [originalDadosSalvar, setOriginalDadosSalvar] = useState<any>(null);
 
   const selectedClientData = clients.find(c => c.id === selectedClientId)
 
@@ -129,7 +146,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
 
   const isMissingTimeSlot = isAgendamentoManual && manualSessions.some(s => !s.timeSlot || !s.date)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmitPreview = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isSubmitting) return;
 
@@ -146,13 +163,96 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
       useReposicao, descontarDoPlano, comecarHoje, valorPersonalizado: valorPersonalizado ? Number(valorPersonalizado) : undefined
     }
 
-    const resultado = await criarAgendamento(dadosParaSalvar)
+    const resultado = await validarAgendamentosPreview(dadosParaSalvar)
+
+    setIsSubmitting(false)
 
     if (resultado.sucesso) {
-      router.push('/agendamentos'); router.refresh()
+      setPreviewData(resultado.sessoes)
+      setOriginalDadosSalvar(dadosParaSalvar)
+      setPreviewModalOpen(true)
+      setExpandedCardIndex(null)
     } else {
       setFormError(resultado.erro || "Conflito de horários ou erro no servidor.")
-      setIsSubmitting(false)
+    }
+  }
+
+  const handleRemovePreview = (index: number) => {
+    setPreviewData(prev => prev.filter((_, i) => i !== index));
+    setExpandedCardIndex(null);
+  }
+
+  const handleSwapInstructor = async (index: number) => {
+    const session = previewData[index];
+    const newInst = session.instructor === 'Marisa' ? 'Loani' : 'Marisa';
+    
+    setIsCheckingSlot(true);
+    let stats = dayStats[session.dateStr];
+    if (!stats) {
+        stats = await checkDailyAvailability(session.dateStr);
+        setDayStats(prev => ({...prev, [session.dateStr]: stats}));
+    }
+    setIsCheckingSlot(false);
+
+    const timeStats = stats[session.timeStr] || { total: 0, Marisa: 0, Loani: 0, MarisaBlocked: false, LoaniBlocked: false };
+
+    let newStatus = 'OK';
+    let errorMsg = '';
+    if (timeStats[`${newInst}Blocked`]) { newStatus = 'BLOQUEADO'; errorMsg = `A Dra. ${newInst} também está indisponível.`; }
+    else if (timeStats.total >= 4) { newStatus = 'LOTADO'; errorMsg = 'O estúdio está lotado neste horário (4 alunos).'; }
+    else if ((newInst === 'Marisa' ? timeStats.Marisa : timeStats.Loani) >= 2) { newStatus = 'INSTRUTOR_LOTADO'; errorMsg = `A Dra. ${newInst} já tem 2 alunos marcados.`; }
+
+    const newData = [...previewData];
+    newData[index] = { ...session, instructor: newInst, status: newStatus as any, errorMsg };
+    setPreviewData(newData);
+  }
+
+  const handleApplyNewDateTime = async (index: number) => {
+    const session = previewData[index];
+    const newDate = editSessionData.dateStr;
+    const newTime = editSessionData.timeStr;
+    if (!newDate || !newTime) return;
+
+    setIsCheckingSlot(true);
+    let stats = dayStats[newDate];
+    if (!stats) {
+        stats = await checkDailyAvailability(newDate);
+        setDayStats(prev => ({...prev, [newDate]: stats}));
+    }
+    setIsCheckingSlot(false);
+
+    const timeStats = stats[newTime] || { total: 0, Marisa: 0, Loani: 0, MarisaBlocked: false, LoaniBlocked: false };
+
+    let newStatus = 'OK';
+    let errorMsg = '';
+    if (timeStats[`${session.instructor}Blocked`]) { newStatus = 'BLOQUEADO'; errorMsg = `Indisponível neste novo horário.`; }
+    else if (timeStats.total >= 4) { newStatus = 'LOTADO'; errorMsg = 'Este novo horário está lotado.'; }
+    else if ((session.instructor === 'Marisa' ? timeStats.Marisa : timeStats.Loani) >= 2) { newStatus = 'INSTRUTOR_LOTADO'; errorMsg = `A instrutora está lotada neste novo horário.`; }
+
+    const [y, m, d] = newDate.split('-');
+    const newData = [...previewData];
+    newData[index] = { ...session, dateStr: newDate, timeStr: newTime, status: newStatus as any, errorMsg, diaFormatado: `${d}/${m}/${y}` };
+    setPreviewData(newData);
+    
+    if (newStatus === 'OK') setExpandedCardIndex(null);
+  }
+
+  const handleConfirmFinal = async () => {
+    if (previewData.some(s => s.status !== 'OK')) return;
+    setIsSubmitting(true);
+    const res = await efetivarAgendamentos({
+      ...originalDadosSalvar,
+      sessoesConfirmadas: previewData
+    });
+    setIsSubmitting(false);
+
+    if (res.sucesso) {
+      setPreviewModalOpen(false);
+      router.push('/agendamentos'); 
+      router.refresh();
+    } else {
+      setFormError(res.erro || "Falha final ao agendar.");
+      setPreviewModalOpen(false);
     }
   }
 
@@ -161,15 +261,143 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
   const qtdSemana = Math.min(freqSelecionada, saldoAtual);
   const qtdMes = Math.min(freqSelecionada * 4, saldoAtual);
 
+  const hasConflicts = previewData.some(s => s.status !== 'OK');
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       
+      {previewModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-[#0f5c4e]">Revisão de Agendamentos</h2>
+                <p className="text-xs text-slate-500 font-bold mt-1">Verifique os conflitos antes de salvar no sistema.</p>
+              </div>
+              <button onClick={() => setPreviewModalOpen(false)} className="text-slate-400 hover:text-slate-700 bg-slate-200 hover:bg-slate-300 w-8 h-8 rounded-full flex items-center justify-center transition-colors">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-50/50">
+              {hasConflicts && (
+                <div className="mb-6 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl flex gap-3 text-sm font-bold shadow-sm">
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <p>Existem horários com conflito (ex: Instrutor ou Estúdio Lotado). Clique neles para resolver os problemas ou escolha "Remover Sessão" para ignorá-las e guardar o saldo.</p>
+                </div>
+              )}
+
+              {previewData.map((session, idx) => {
+                const isExpanded = expandedCardIndex === idx;
+                const isOk = session.status === 'OK';
+                
+                return (
+                  <div key={session.id} className={`bg-white border rounded-xl overflow-hidden transition-all shadow-sm ${isOk ? 'border-emerald-200' : 'border-red-300'}`}>
+                    <div 
+                      className={`p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors ${isOk ? '' : 'bg-red-50/30'}`}
+                      onClick={() => {
+                        if (!isOk) {
+                          if (isExpanded) setExpandedCardIndex(null);
+                          else {
+                            setExpandedCardIndex(idx);
+                            setEditSessionData({ dateStr: session.dateStr, timeStr: session.timeStr });
+                          }
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isOk ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                          {isOk ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-800">{session.diaFormatado} <span className="text-slate-400 font-medium">às</span> {session.timeStr}</p>
+                          <p className="text-xs font-bold text-slate-500">Dra. {session.instructor}</p>
+                        </div>
+                      </div>
+                      
+                      {!isOk && (
+                        <div className="text-right">
+                          <p className="text-xs font-black text-red-600 uppercase tracking-widest">{session.status.replace('_', ' ')}</p>
+                          <p className="text-[10px] text-red-500 font-medium mt-0.5">{session.errorMsg}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {isExpanded && !isOk && (
+                      <div className="p-5 border-t border-red-100 bg-red-50/10 space-y-5 animate-in slide-in-from-top-2">
+                        
+                        {/* Trocar Instrutor */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                          <h5 className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-3">Opção 1: Trocar de Instrutora</h5>
+                          <Button 
+                            type="button"
+                            disabled={session.status === 'LOTADO' || isCheckingSlot} 
+                            onClick={() => handleSwapInstructor(idx)}
+                            className="w-full bg-[#0f5c4e] hover:bg-[#0a453a] text-white font-bold h-10 disabled:bg-slate-300"
+                          >
+                            Trocar para Dra. {session.instructor === 'Marisa' ? 'Loani' : 'Marisa'}
+                          </Button>
+                          {session.status === 'LOTADO' && <p className="text-[10px] text-slate-400 mt-2 font-bold text-center">Inativo porque a clínica (4 alunos) já está lotada neste horário.</p>}
+                        </div>
+
+                        {/* Trocar Data/Hora */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                          <h5 className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-3">Opção 2: Escolher Nova Data/Hora</h5>
+                          <div className="flex gap-3 relative">
+                            <div className="flex-1">
+                              <Input type="date" value={editSessionData.dateStr} onChange={e => setEditSessionData({...editSessionData, dateStr: e.target.value})} className="h-10 bg-slate-50" />
+                            </div>
+                            <div className="flex-1">
+                              <Select value={editSessionData.timeStr} onValueChange={v => setEditSessionData({...editSessionData, timeStr: v})}>
+                                <SelectTrigger className="h-10 bg-slate-50 font-bold"><SelectValue placeholder="Hora" /></SelectTrigger>
+                                {/* Z-INDEX 9999 ADICIONADO AQUI PARA NÃO FICAR ATRÁS DO MODAL */}
+                                <SelectContent className="z-[9999]">
+                                  {horariosDisponiveisBase.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {/* COR DO BOTÃO APLICAR CORRIGIDA AQUI */}
+                            <Button type="button" onClick={() => handleApplyNewDateTime(idx)} disabled={!editSessionData.dateStr || !editSessionData.timeStr || isCheckingSlot} className="h-10 px-6 font-bold bg-[#0f5c4e] hover:bg-[#0a453a] text-white shadow-sm">
+                              Aplicar
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Remover */}
+                        <div className="text-center pt-2">
+                          <button type="button" onClick={() => handleRemovePreview(idx)} className="text-xs font-bold text-slate-500 hover:text-red-600 underline underline-offset-2">
+                            Apenas Remover Sessão (Guardar saldo na conta)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              
+              {previewData.length === 0 && (
+                <div className="text-center py-10">
+                  <p className="text-slate-500 font-bold">Todas as sessões foram removidas. Feche esta janela ou cancele o agendamento.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 bg-white border-t border-slate-100 flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setPreviewModalOpen(false)} className="font-bold px-6 h-12">Corrigir Formulário</Button>
+              <Button type="button" onClick={handleConfirmFinal} disabled={hasConflicts || isSubmitting || previewData.length === 0} className="bg-[#0f5c4e] hover:bg-[#0a453a] text-white font-bold px-8 h-12 shadow-lg disabled:opacity-50">
+                {isSubmitting ? 'Salvando Definitivo...' : `Confirmar (${previewData.length} sessões)`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex p-1.5 bg-slate-100 rounded-xl w-fit shadow-inner">
         <button type="button" onClick={() => { setTipoAgendamento('REGULAR'); setValorPersonalizado(''); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${tipoAgendamento === 'REGULAR' ? 'bg-white text-[#0f5c4e] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Aluno Regular</button>
         <button type="button" onClick={() => { setTipoAgendamento('EXPERIMENTAL'); setServiceType('PILATES'); setValorPersonalizado(''); }} className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${tipoAgendamento === 'EXPERIMENTAL' ? 'bg-white text-[#0f5c4e] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Experimental / Rápida</button>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8 space-y-8">
+      <form onSubmit={handleSubmitPreview} className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8 space-y-8">
         
         <div className="p-5 bg-slate-50 rounded-xl border border-slate-100">
           <h3 className="flex items-center gap-2 text-lg font-bold text-[#0f5c4e] mb-4"><UserSquare2 className="w-5 h-5" /> 1. Identificação</h3>
@@ -235,7 +463,6 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
         <div className="p-5 bg-[#0f5c4e]/5 rounded-xl border border-[#0f5c4e]/20">
           <h3 className="flex items-center justify-between text-lg font-bold text-[#0f5c4e] mb-4">
             <span className="flex items-center gap-2"><Clock className="w-5 h-5" /> 3. Datas e Horários</span>
-            {/* VALOR PERSONALIZADO PARA AVULSO/EXPERIMENTAL */}
             {(tipoAgendamento === 'EXPERIMENTAL' || isAgendamentoManual) && (
               <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm animate-in fade-in">
                 <span className="text-xs font-bold text-slate-500">Valor Cobrado: R$</span>
@@ -380,7 +607,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
           {formError && <div className="w-full flex items-center gap-2 p-4 bg-red-50 text-red-700 font-bold border border-red-200 rounded-xl"><AlertCircle className="w-5 h-5 shrink-0" /> {formError}</div>}
           <div className="flex gap-3">
             <Button asChild variant="outline" className="h-12 px-6 rounded-xl font-bold"><Link href="/agendamentos">Cancelar</Link></Button>
-            <Button type="submit" disabled={isSubmitting || (isAgendamentoManual && isMissingTimeSlot) || (!isAgendamentoManual && Object.keys(diasComHorarios).length === 0)} className="h-12 px-8 bg-[#0f5c4e] hover:bg-[#0a453a] text-white font-bold rounded-xl shadow-lg">{isSubmitting ? 'A Processar e Salvar...' : 'Confirmar Agendamento'}</Button>
+            <Button type="submit" disabled={isSubmitting || (isAgendamentoManual && isMissingTimeSlot) || (!isAgendamentoManual && Object.keys(diasComHorarios).length === 0)} className="h-12 px-8 bg-[#0f5c4e] hover:bg-[#0a453a] text-white font-bold rounded-xl shadow-lg">{isSubmitting ? 'A Processar...' : 'Testar e Validar Agendamento'}</Button>
           </div>
         </div>
 

@@ -50,13 +50,12 @@ export async function deleteClientDocument(clientId: string, fileUrl: string, do
 }
 
 // ==========================================
-// 2. CLIENTES (CRUD) - BUG CORRIGIDO AQUI!
+// 2. CLIENTES (CRUD)
 // ==========================================
 export async function createClient(formData: FormData) {
   const name = formData.get("name") as string
   const email = formData.get("email") as string
   const phone = formData.get("phone") as string
-  // O CAMPO PLAN FOI REMOVIDO DAQUI PARA NÃO SOBRESCREVER O PLANO REAL
   const documento = formData.get("documento") as string
   const cep = formData.get("cep") as string
   const logradouro = formData.get("logradouro") as string
@@ -99,7 +98,6 @@ export async function updateClient(id: string, formData: FormData) {
   const name = formData.get("name") as string;
   const email = formData.get("email") as string;
   const phone = formData.get("phone") as string;
-  // O CAMPO PLAN FOI REMOVIDO DAQUI PARA NÃO SOBRESCREVER O PLANO REAL COM VAZIO
   const documento = formData.get("documento") as string;
   const cep = formData.get("cep") as string;
   const logradouro = formData.get("logradouro") as string;
@@ -427,7 +425,6 @@ export async function cancelarAgendamento(id: string) {
       include: { client: true }
     });
 
-    // REGRA DE OURO: Se tem transação atrelada, foi aula extra/avulsa paga a parte. NÃO DEVOLVE O SALDO.
     const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
     const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
 
@@ -465,14 +462,12 @@ export async function deletarAgendamento(id: string) {
   try {
     const appt = await prisma.appointment.findUnique({ where: { id }, include: { client: true } });
     
-    // Identifica se era Avulsa ANTES de apagar a transação
     const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
     const isAulaDoPlano = appt?.type && String(appt.type).includes('PILATES_') && !isAvulsa;
 
     await prisma.transaction.deleteMany({ where: { appointmentId: id } })
     await prisma.appointment.delete({ where: { id } })
     
-    // Devolve para o saldo SOMENTE se não for Avulsa
     if (appt && appt.status !== 'CANCELADO' && appt.clientId && appt.client?.plan && isAulaDoPlano) {
       await prisma.client.update({
         where: { id: appt.clientId },
@@ -500,7 +495,6 @@ export async function reverterAgendamento(id: string) {
     
     const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
 
-    // Consome do saldo novamente SOMENTE se não for Avulsa
     if (appt.clientId && appt.client?.plan && isAulaDoPlano) {
       await prisma.client.update({
         where: { id: appt.clientId },
@@ -580,61 +574,15 @@ export async function atualizarAgendamento(id: string, novaData: Date, novoInstr
 }
 
 // ==========================================
-// 5. NOVO AGENDAMENTO INTELIGENTE (SEMANA/MES/TUDO) + AVULSAS
+// 5. PREVIEW DE AGENDAMENTO (PARA O MODAL)
 // ==========================================
-export async function criarAgendamento(dados: any) {
+export async function validarAgendamentosPreview(dados: any) {
   try {
-    const { 
-      tipoAgendamento, serviceType, clientId, tempName, tempPhone, instructorId, 
-      isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, 
-      startDate, useReposicao: paramUseReposicao, descontarDoPlano: paramDescontar, comecarHoje,
-      valorPersonalizado 
-    } = dados;
-
-    let useReposicao = paramUseReposicao;
-    let descontarDoPlano = paramDescontar;
-
-    if (isAgendamentoManual && serviceType === 'PILATES') {
-        descontarDoPlano = false;
-        useReposicao = false;
-    }
-
-    let finalType: any = "EXPERIMENTAL";
-    let clientPlanType = "PILATES_1X"; 
-    
-    let precoPilatesAvulso = 100.00;
-    let precoFisio = 150.00;
-    let precoExp = 50.00;
-    
-    try {
-      const settings = await prisma.settings.findFirst();
-      if (settings) {
-        precoPilatesAvulso = Number(settings.pricePilates) || 100.00;
-        precoFisio = Number(settings.priceFisio) || 150.00;
-        precoExp = Number(settings.priceExp) || 50.00;
-      }
-    } catch (e) {}
-
-    if (valorPersonalizado !== undefined && valorPersonalizado !== null) {
-      if (tipoAgendamento === 'EXPERIMENTAL') precoExp = Number(valorPersonalizado);
-      else if (serviceType === 'FISIOTERAPIA') precoFisio = Number(valorPersonalizado);
-      else precoPilatesAvulso = Number(valorPersonalizado);
-    }
+    const { tipoAgendamento, serviceType, clientId, instructorId, isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, startDate, descontarDoPlano, comecarHoje } = dados;
 
     let clienteAtual = null;
-    
-    if (tipoAgendamento === 'REGULAR') {
-      if (serviceType === 'FISIOTERAPIA') {
-        finalType = "FISIO_SESSAO"; 
-      } else {
-        clienteAtual = await prisma.client.findUnique({ where: { id: clientId } });
-        const p = clienteAtual?.plan?.toUpperCase() || "";
-        if (p.includes("1X")) clientPlanType = "PILATES_1X";
-        else if (p.includes("2X")) clientPlanType = "PILATES_2X";
-        else if (p.includes("3X")) clientPlanType = "PILATES_3X";
-        else if (p.includes("5X")) clientPlanType = "PILATES_5X";
-        finalType = clientPlanType; 
-      }
+    if (tipoAgendamento === 'REGULAR' && serviceType === 'PILATES') {
+      clienteAtual = await prisma.client.findUnique({ where: { id: clientId } });
     }
 
     let datesToCheck: { date: Date, instructor: string, clientId?: string }[] = [];
@@ -676,7 +624,7 @@ export async function criarAgendamento(dados: any) {
             const isToday = dataAtual.getUTCDate() === agora.getDate() && dataAtual.getUTCMonth() === agora.getMonth() && dataAtual.getUTCFullYear() === agora.getFullYear();
 
             if (isToday && !comecarHoje) {
-               // Pula o dia de hoje
+               // Pula
             } else {
                const horarioDoDia = diasComHorarios[diaSemanaStr];
                const [hora, minuto] = horarioDoDia.split(':');
@@ -698,18 +646,7 @@ export async function criarAgendamento(dados: any) {
 
     if (datesToCheck.length === 0) return { sucesso: false, erro: "Nenhuma data selecionada ou o paciente não tem saldo suficiente." };
 
-    if (useReposicao && clientId) {
-      if (clienteAtual!.repositionCredits < datesToCheck.length) {
-        return { sucesso: false, erro: `Saldo de Reposição insuficiente. O paciente tem apenas ${clienteAtual!.repositionCredits} crédito(s).` };
-      }
-      await prisma.client.update({ where: { id: clientId }, data: { repositionCredits: { decrement: datesToCheck.length } } });
-    } else if (descontarDoPlano && clientId) {
-      if (clienteAtual!.remainingSessions < datesToCheck.length) {
-        return { sucesso: false, erro: `Saldo do plano insuficiente. Tentativa de agendar ${datesToCheck.length} aulas, mas o saldo é ${clienteAtual!.remainingSessions}.` };
-      }
-      await prisma.client.update({ where: { id: clientId }, data: { remainingSessions: { decrement: datesToCheck.length } } });
-    }
-
+    // Validação do banco em massa
     const datesOnly = datesToCheck.map(d => d.date);
     const minD = new Date(Math.min(...datesOnly.map(d => d.getTime())));
     const maxD = new Date(Math.max(...datesOnly.map(d => d.getTime())));
@@ -728,10 +665,102 @@ export async function criarAgendamento(dados: any) {
         return acc;
     }, {} as Record<number, any[]>);
 
-    for (const req of datesToCheck) {
+    const sessoesPreview = datesToCheck.map((req, idx) => {
         const t = req.date.getTime();
         const inSlot = grouped[t] || [];
         
+        const diaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(req.date);
+        const horaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(req.date);
+        
+        const [d, m, y] = diaStr.split('/');
+        const dateStr = `${y}-${m}-${d}`;
+
+        const isBlockedByDoctor = blockedTimes.some(b => {
+            const bDateStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(b.date);
+            return b.instructor === req.instructor && bDateStr === diaStr && horaStr >= b.startTime && horaStr <= b.endTime;
+        });
+        
+        let status = 'OK';
+        let errorMsg = '';
+
+        if (isBlockedByDoctor) { status = 'BLOQUEADO'; errorMsg = `A Dra. ${req.instructor} está marcada como Indisponível neste horário.`; }
+        else if (req.clientId && inSlot.some(a => a.clientId === req.clientId)) { status = 'DUPLICADO'; errorMsg = `O aluno já tem aula marcada neste dia e horário.`; }
+        else if (inSlot.length >= 4) { status = 'LOTADO'; errorMsg = `Estúdio lotado (4/4) vagas ocupadas neste dia/horário.`; }
+        else if (inSlot.filter(a => a.instructor === req.instructor).length >= 2) { status = 'INSTRUTOR_LOTADO'; errorMsg = `A Dra. ${req.instructor} já tem 2 alunos marcados.`; }
+
+        return {
+            id: `temp-${idx}`,
+            dateStr,
+            timeStr: horaStr,
+            instructor: req.instructor,
+            status,
+            errorMsg,
+            diaFormatado: diaStr
+        };
+    });
+
+    return { sucesso: true, sessoes: sessoesPreview };
+  } catch (error) {
+    return { sucesso: false, erro: "Falha ao gerar o preview de agendamentos." };
+  }
+}
+
+// ==========================================
+// 6. EFETIVAR AGENDAMENTOS SEGURAMENTE
+// ==========================================
+export async function efetivarAgendamentos(dadosFinais: any) {
+  try {
+    const { 
+      sessoesConfirmadas, tipoAgendamento, serviceType, clientId, tempName, tempPhone, 
+      useReposicao: paramUseReposicao, descontarDoPlano: paramDescontar, valorPersonalizado 
+    } = dadosFinais;
+
+    // Converte os dados do Frontend de volta para as Datas Reais do Backend
+    const datesToCheck = sessoesConfirmadas.map((s: any) => {
+        const [hora, minuto] = s.timeStr.split(':');
+        const d = new Date(`${s.dateStr}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
+        return { date: d, instructor: s.instructor, clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined };
+    });
+
+    if (datesToCheck.length === 0) return { sucesso: false, erro: "Nenhuma sessão para agendar." };
+
+    let useReposicao = paramUseReposicao;
+    let descontarDoPlano = paramDescontar;
+    
+    let finalType: any = "EXPERIMENTAL";
+    if (tipoAgendamento === 'REGULAR') {
+      if (serviceType === 'FISIOTERAPIA') finalType = "FISIO_SESSAO"; 
+      else {
+        const clienteAtual = await prisma.client.findUnique({ where: { id: clientId } });
+        const p = clienteAtual?.plan?.toUpperCase() || "";
+        if (p.includes("1X")) finalType = "PILATES_1X";
+        else if (p.includes("2X")) finalType = "PILATES_2X";
+        else if (p.includes("3X")) finalType = "PILATES_3X";
+        else if (p.includes("5X")) finalType = "PILATES_5X";
+      }
+    }
+
+    // 1. CHECAGEM FINAL DE CONFLITOS (Para evitar que outro utilizador roube a vaga enquanto o modal estava aberto)
+    const datesOnly = datesToCheck.map((d: any) => d.date);
+    const minD = new Date(Math.min(...datesOnly.map((d: any) => d.getTime())));
+    const maxD = new Date(Math.max(...datesOnly.map((d: any) => d.getTime())));
+    
+    const existingAppts = await prisma.appointment.findMany({
+        where: { date: { gte: minD, lte: maxD }, status: { notIn: ['CANCELADO', 'FALTA'] } },
+        select: { date: true, instructor: true, clientId: true }
+    });
+    const blockedTimes = await prisma.instructorBlock.findMany({ where: { date: { gte: minD, lte: maxD } } });
+
+    const grouped = existingAppts.reduce((acc, curr) => {
+        const t = curr.date.getTime();
+        if (!acc[t]) acc[t] = [];
+        acc[t].push(curr);
+        return acc;
+    }, {} as Record<number, any[]>);
+
+    for (const req of datesToCheck) {
+        const t = req.date.getTime();
+        const inSlot = grouped[t] || [];
         const diaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(req.date);
         const horaStr = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(req.date);
 
@@ -740,55 +769,71 @@ export async function criarAgendamento(dados: any) {
             return b.instructor === req.instructor && bDateStr === diaStr && horaStr >= b.startTime && horaStr <= b.endTime;
         });
 
-        if (isBlockedByDoctor) return { sucesso: false, erro: `A Dra. ${req.instructor} está marcada como Indisponível dia ${diaStr} às ${horaStr}.` };
-        if (req.clientId) {
-          const isClone = inSlot.some(a => a.clientId === req.clientId);
-          if (isClone) return { sucesso: false, erro: `O aluno já tem aula marcada dia ${diaStr} às ${horaStr}.` };
-        }
-        if (inSlot.length >= 4) return { sucesso: false, erro: `Estúdio lotado (4/4) no dia ${diaStr} às ${horaStr}.` };
-        const instrCount = inSlot.filter(a => a.instructor === req.instructor).length;
-        if (instrCount >= 2) return { sucesso: false, erro: `A Dra. ${req.instructor} já tem 2 alunos marcados dia ${diaStr} às ${horaStr}.` };
+        // SE ENCONTRAR ERRO AQUI, ELE RETORNA ANTES DE MEXER NO SALDO! (BUG RESOLVIDO)
+        if (isBlockedByDoctor) return { sucesso: false, erro: `A Dra. ${req.instructor} ficou Indisponível dia ${diaStr} às ${horaStr}.` };
+        if (req.clientId && inSlot.some((a: any) => a.clientId === req.clientId)) return { sucesso: false, erro: `O aluno já tem aula no dia ${diaStr} às ${horaStr}.` };
+        if (inSlot.length >= 4) return { sucesso: false, erro: `A vaga do dia ${diaStr} às ${horaStr} acabou de ser ocupada e o estúdio lotou.` };
+        if (inSlot.filter((a: any) => a.instructor === req.instructor).length >= 2) return { sucesso: false, erro: `A Dra. ${req.instructor} acabou de lotar a agenda no dia ${diaStr} às ${horaStr}.` };
         
         inSlot.push({ date: req.date, instructor: req.instructor, clientId: req.clientId });
         grouped[t] = inSlot;
     }
 
-    const transacoesFinanceiras = [];
-    const apptsToCreate = datesToCheck.map(req => ({
-          clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
-          tempName: tipoAgendamento === 'EXPERIMENTAL' ? tempName : undefined,
-          tempPhone: tipoAgendamento === 'EXPERIMENTAL' ? tempPhone : undefined,
-          instructor: req.instructor, type: finalType as any, date: req.date, status: 'AGENDADO' as any
-        }));
-    
-    const createdAppts = await Promise.all(apptsToCreate.map(data => prisma.appointment.create({ data })));
-
-    if (!useReposicao && !descontarDoPlano) {
-      for (const appt of createdAppts) {
-        if (finalType === 'FISIO_SESSAO' || finalType === 'EXPERIMENTAL' || (tipoAgendamento === 'REGULAR' && isAgendamentoManual)) {
-          let amountToCharge = precoPilatesAvulso;
-          let txTitle = 'Aula Avulsa de Pilates (Extra Plano)';
-
-          if (finalType === 'FISIO_SESSAO') { amountToCharge = precoFisio; txTitle = 'Sessão de Fisioterapia'; }
-          if (finalType === 'EXPERIMENTAL') { amountToCharge = precoExp; txTitle = 'Sessão Experimental'; }
-
-          transacoesFinanceiras.push({
-            title: txTitle, amount: amountToCharge, type: 'RECEITA', category: 'SESSAO_AVULSA', status: 'PENDENTE', paymentMethod: 'PIX', clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined, appointmentId: appt.id, date: new Date()
-          });
-        }
-      }
+    // 2. TUDO OK! AGORA SIM DESCONTAMOS O SALDO COM SEGURANÇA
+    if (useReposicao && clientId) {
+      await prisma.client.update({ where: { id: clientId }, data: { repositionCredits: { decrement: datesToCheck.length } } });
+    } else if (descontarDoPlano && clientId) {
+      await prisma.client.update({ where: { id: clientId }, data: { remainingSessions: { decrement: datesToCheck.length } } });
     }
 
-    if (transacoesFinanceiras.length > 0) await prisma.transaction.createMany({ data: transacoesFinanceiras as any });
+    // 3. GRAVAR AS AULAS
+    const apptsToCreate = datesToCheck.map((req: any) => ({
+        clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
+        tempName: tipoAgendamento === 'EXPERIMENTAL' ? tempName : undefined,
+        tempPhone: tipoAgendamento === 'EXPERIMENTAL' ? tempPhone : undefined,
+        instructor: req.instructor, type: finalType as any, date: req.date, status: 'AGENDADO' as any
+    }));
+    
+    const createdAppts = await Promise.all(apptsToCreate.map((data: any) => prisma.appointment.create({ data })));
+
+    // 4. GERAR FINANCEIRO SE FOR O CASO
+    if (!useReposicao && !descontarDoPlano) {
+      let precoPilatesAvulso = 100.00; let precoFisio = 150.00; let precoExp = 50.00;
+      try {
+        const settings = await prisma.settings.findFirst();
+        if (settings) { precoPilatesAvulso = Number(settings.pricePilates); precoFisio = Number(settings.priceFisio); precoExp = Number(settings.priceExp); }
+      } catch (e) {}
+
+      if (valorPersonalizado !== undefined && valorPersonalizado !== null) {
+        if (tipoAgendamento === 'EXPERIMENTAL') precoExp = Number(valorPersonalizado);
+        else if (serviceType === 'FISIOTERAPIA') precoFisio = Number(valorPersonalizado);
+        else precoPilatesAvulso = Number(valorPersonalizado);
+      }
+
+      const transacoesFinanceiras = [];
+      for (const appt of createdAppts) {
+        let amountToCharge = precoPilatesAvulso;
+        let txTitle = 'Aula Avulsa de Pilates (Extra Plano)';
+
+        if (finalType === 'FISIO_SESSAO') { amountToCharge = precoFisio; txTitle = 'Sessão de Fisioterapia'; }
+        if (finalType === 'EXPERIMENTAL') { amountToCharge = precoExp; txTitle = 'Sessão Experimental'; }
+
+        transacoesFinanceiras.push({
+          title: txTitle, amount: amountToCharge, type: 'RECEITA', category: 'SESSAO_AVULSA', status: 'PENDENTE', paymentMethod: 'PIX', clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined, appointmentId: appt.id, date: new Date()
+        });
+      }
+      if (transacoesFinanceiras.length > 0) await prisma.transaction.createMany({ data: transacoesFinanceiras as any });
+    }
+
     revalidatePath('/agendamentos'); revalidatePath('/financeiro');
     return { sucesso: true };
   } catch (erro) {
-    return { sucesso: false, erro: "Falha ao gravar no banco. Verifique os conflitos de horário." };
+    return { sucesso: false, erro: "Falha crítica ao gravar no banco." };
   }
 }
 
 // ==========================================
-// 6. BLOQUEIOS DE AGENDA E CONFIGURAÇÕES
+// 7. CONFIGURAÇÕES ADICIONAIS
 // ==========================================
 export async function createInstructorBlock(data: { instructor: string, date: string, startTime: string, endTime: string, reason?: string }) {
   try {
