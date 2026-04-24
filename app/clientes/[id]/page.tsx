@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/sidebar"
 import PlanButtons from "./PlanButtons"
 import EvolutionList from "./EvolutionList"
 import ClientFinanceHistory from "./ClientFinanceHistory"
+import ClientAppointmentsManager from "./ClientAppointmentsManager" // <-- COMPONENTE NOVO IMPORTADO AQUI
 
 export default async function ClientProfilePage({ params }: { params: { id: string } }) {
   const client = await getClientById(params.id)
@@ -27,7 +28,7 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
   let totalSessoesPlano = 0
 
   if (planStr.includes("MENSAL")) mesesDuracao = 1
-  if (planStr.includes("TRIMESTRAL")) mesesDuracao = 4 // Mantido os 4 meses
+  if (planStr.includes("TRIMESTRAL")) mesesDuracao = 4 
   if (planStr.includes("SEMESTRAL")) mesesDuracao = 6
 
   if (planStr.includes("1X")) totalSessoesPlano = 4 * mesesDuracao
@@ -112,7 +113,6 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
                   <h3 className="font-bold text-foreground flex items-center gap-2"><Zap className="w-4 h-4 text-primary" /> Assinatura</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">Gestão de pacote e sessões</p>
                 </div>
-                {/* Aqui nós passamos o settings para o botão de planos! */}
                 <PlanButtons 
                   clientId={client.id} 
                   currentPlan={client.plan} 
@@ -196,6 +196,9 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
 
           {/* COLUNA DIREITA */}
           <div className="lg:col-span-8 space-y-6 sm:space-y-8 print:space-y-6">
+
+            {/* MANAGER DE AGENDAMENTOS EM LOTE (REMANEJAR / CANCELAR) AQUI NO TOPO! */}
+            <ClientAppointmentsManager client={client} appointments={(client as any).appointments || []} />
             
             {/* COMPONENTE DO HISTÓRICO FINANCEIRO */}
             <div className="bg-card rounded-2xl sm:rounded-3xl border border-border shadow-sm p-6 sm:p-8">

@@ -159,7 +159,7 @@ export async function getClientById(id: string) {
   try {
     return await prisma.client.findUnique({
       where: { id },
-      include: { evolutions: true, appointments: true, transactions: { orderBy: { date: 'desc' } } }
+      include: { evolutions: true, appointments: { orderBy: { date: 'asc' } }, transactions: { orderBy: { date: 'desc' } } }
     })
   } catch (error) {
     return null
@@ -578,7 +578,7 @@ export async function atualizarAgendamento(id: string, novaData: Date, novoInstr
 // ==========================================
 export async function validarAgendamentosPreview(dados: any) {
   try {
-    const { tipoAgendamento, serviceType, clientId, instructorId, isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, startDate, descontarDoPlano, comecarHoje } = dados;
+    const { tipoAgendamento, serviceType, clientId, instructorId, isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, startDate, descontarDoPlano, comecarHoje, ignoreApptIds, forceTotalSessions } = dados;
 
     let clienteAtual = null;
     if (tipoAgendamento === 'REGULAR' && serviceType === 'PILATES') {
@@ -597,15 +597,15 @@ export async function validarAgendamentosPreview(dados: any) {
     } else if (serviceType === 'PILATES' && diasComHorarios && Object.keys(diasComHorarios).length > 0) {
       const diasMapa: Record<string, number> = { 'Dom': 0, 'Seg': 1, 'Ter': 2, 'Qua': 3, 'Qui': 4, 'Sex': 5, 'Sáb': 6 };
       
-      let limiteAulas = Object.keys(diasComHorarios).length; 
+      let limiteAulas = forceTotalSessions || Object.keys(diasComHorarios).length; 
       
-      if (tipoAgendamento === 'REGULAR' && clienteAtual) {
+      if (!forceTotalSessions && tipoAgendamento === 'REGULAR' && clienteAtual) {
          if (recorrenciaPeriodo === 'SEMANA') limiteAulas = Object.keys(diasComHorarios).length;
          else if (recorrenciaPeriodo === 'MES') limiteAulas = Object.keys(diasComHorarios).length * 4;
          else if (recorrenciaPeriodo === 'TUDO') limiteAulas = clienteAtual.remainingSessions;
       }
 
-      if (descontarDoPlano && clienteAtual) {
+      if (!forceTotalSessions && descontarDoPlano && clienteAtual) {
           limiteAulas = Math.min(limiteAulas, clienteAtual.remainingSessions);
       }
 
@@ -652,7 +652,11 @@ export async function validarAgendamentosPreview(dados: any) {
     const maxD = new Date(Math.max(...datesOnly.map(d => d.getTime())));
     
     const existingAppts = await prisma.appointment.findMany({
-        where: { date: { gte: minD, lte: maxD }, status: { notIn: ['CANCELADO', 'FALTA'] } },
+        where: { 
+          date: { gte: minD, lte: maxD }, 
+          status: { notIn: ['CANCELADO', 'FALTA'] },
+          id: { notIn: ignoreApptIds || [] }
+        },
         select: { date: true, instructor: true, clientId: true }
     });
 
@@ -712,7 +716,8 @@ export async function efetivarAgendamentos(dadosFinais: any) {
   try {
     const { 
       sessoesConfirmadas, tipoAgendamento, serviceType, clientId, tempName, tempPhone, 
-      useReposicao: paramUseReposicao, descontarDoPlano: paramDescontar, valorPersonalizado 
+      useReposicao: paramUseReposicao, descontarDoPlano: paramDescontar, valorPersonalizado,
+      cancelOldApptIds
     } = dadosFinais;
 
     // Converte os dados do Frontend de volta para as Datas Reais do Backend
@@ -740,13 +745,17 @@ export async function efetivarAgendamentos(dadosFinais: any) {
       }
     }
 
-    // 1. CHECAGEM FINAL DE CONFLITOS (Para evitar que outro utilizador roube a vaga enquanto o modal estava aberto)
+    // 1. CHECAGEM FINAL DE CONFLITOS
     const datesOnly = datesToCheck.map((d: any) => d.date);
     const minD = new Date(Math.min(...datesOnly.map((d: any) => d.getTime())));
     const maxD = new Date(Math.max(...datesOnly.map((d: any) => d.getTime())));
     
     const existingAppts = await prisma.appointment.findMany({
-        where: { date: { gte: minD, lte: maxD }, status: { notIn: ['CANCELADO', 'FALTA'] } },
+        where: { 
+          date: { gte: minD, lte: maxD }, 
+          status: { notIn: ['CANCELADO', 'FALTA'] },
+          id: { notIn: cancelOldApptIds || [] }
+        },
         select: { date: true, instructor: true, clientId: true }
     });
     const blockedTimes = await prisma.instructorBlock.findMany({ where: { date: { gte: minD, lte: maxD } } });
@@ -769,7 +778,6 @@ export async function efetivarAgendamentos(dadosFinais: any) {
             return b.instructor === req.instructor && bDateStr === diaStr && horaStr >= b.startTime && horaStr <= b.endTime;
         });
 
-        // SE ENCONTRAR ERRO AQUI, ELE RETORNA ANTES DE MEXER NO SALDO! (BUG RESOLVIDO)
         if (isBlockedByDoctor) return { sucesso: false, erro: `A Dra. ${req.instructor} ficou Indisponível dia ${diaStr} às ${horaStr}.` };
         if (req.clientId && inSlot.some((a: any) => a.clientId === req.clientId)) return { sucesso: false, erro: `O aluno já tem aula no dia ${diaStr} às ${horaStr}.` };
         if (inSlot.length >= 4) return { sucesso: false, erro: `A vaga do dia ${diaStr} às ${horaStr} acabou de ser ocupada e o estúdio lotou.` };
@@ -779,14 +787,19 @@ export async function efetivarAgendamentos(dadosFinais: any) {
         grouped[t] = inSlot;
     }
 
-    // 2. TUDO OK! AGORA SIM DESCONTAMOS O SALDO COM SEGURANÇA
+    // 2. CANCELA AS ANTIGAS EM LOTE (ESTORNA O SALDO)
+    if (cancelOldApptIds && cancelOldApptIds.length > 0) {
+      await cancelarAgendamentosLote(cancelOldApptIds, clientId);
+    }
+
+    // 3. DEBITA O SALDO DAS NOVAS
     if (useReposicao && clientId) {
       await prisma.client.update({ where: { id: clientId }, data: { repositionCredits: { decrement: datesToCheck.length } } });
     } else if (descontarDoPlano && clientId) {
       await prisma.client.update({ where: { id: clientId }, data: { remainingSessions: { decrement: datesToCheck.length } } });
     }
 
-    // 3. GRAVAR AS AULAS
+    // 4. GRAVAR AS AULAS
     const apptsToCreate = datesToCheck.map((req: any) => ({
         clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
         tempName: tipoAgendamento === 'EXPERIMENTAL' ? tempName : undefined,
@@ -796,7 +809,7 @@ export async function efetivarAgendamentos(dadosFinais: any) {
     
     const createdAppts = await Promise.all(apptsToCreate.map((data: any) => prisma.appointment.create({ data })));
 
-    // 4. GERAR FINANCEIRO SE FOR O CASO
+    // 5. GERAR FINANCEIRO SE FOR O CASO
     if (!useReposicao && !descontarDoPlano) {
       let precoPilatesAvulso = 100.00; let precoFisio = 150.00; let precoExp = 50.00;
       try {
@@ -825,7 +838,7 @@ export async function efetivarAgendamentos(dadosFinais: any) {
       if (transacoesFinanceiras.length > 0) await prisma.transaction.createMany({ data: transacoesFinanceiras as any });
     }
 
-    revalidatePath('/agendamentos'); revalidatePath('/financeiro');
+    revalidatePath('/agendamentos'); revalidatePath('/financeiro'); revalidatePath('/clientes');
     return { sucesso: true };
   } catch (erro) {
     return { sucesso: false, erro: "Falha crítica ao gravar no banco." };
@@ -833,7 +846,45 @@ export async function efetivarAgendamentos(dadosFinais: any) {
 }
 
 // ==========================================
-// 7. CONFIGURAÇÕES ADICIONAIS
+// 7. GERENCIAMENTO EM LOTE (BULK CANCEL)
+// ==========================================
+export async function cancelarAgendamentosLote(appointmentIds: string[], clientId: string) {
+  try {
+    const appts = await prisma.appointment.findMany({
+      where: { id: { in: appointmentIds }, clientId, status: 'AGENDADO' }
+    });
+
+    if (appts.length === 0) return { sucesso: false, erro: "Nenhuma sessão válida selecionada." };
+
+    let countRefund = 0;
+    for (const appt of appts) {
+      const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: appt.id } });
+      const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
+
+      await prisma.appointment.update({ where: { id: appt.id }, data: { status: 'CANCELADO' } });
+
+      if (isAulaDoPlano) {
+         countRefund++;
+      }
+    }
+
+    if (countRefund > 0) {
+      await prisma.client.update({
+        where: { id: clientId },
+        data: { remainingSessions: { increment: countRefund } }
+      });
+    }
+
+    revalidatePath('/clientes');
+    revalidatePath('/agendamentos');
+    return { sucesso: true, devolvidas: countRefund };
+  } catch (error) {
+    return { sucesso: false, erro: "Erro ao cancelar sessões em lote." };
+  }
+}
+
+// ==========================================
+// 8. BLOQUEIOS DE AGENDA E CONFIGURAÇÕES
 // ==========================================
 export async function createInstructorBlock(data: { instructor: string, date: string, startTime: string, endTime: string, reason?: string }) {
   try {
@@ -918,4 +969,84 @@ export async function checkDailyAvailability(dateStr: string) {
 
     return availability; 
   } catch (error) { return {}; }
+}
+
+// ==========================================
+// 9. RELATÓRIO DE COMISSÕES
+// ==========================================
+export async function getCommissionsReport(instructor: string, startDateStr: string, endDateStr: string) {
+  try {
+    const start = new Date(`${startDateStr}T00:00:00-03:00`);
+    const end = new Date(`${endDateStr}T23:59:59-03:00`);
+
+    const appts = await prisma.appointment.findMany({
+      where: {
+        instructor,
+        date: { gte: start, lte: end },
+        status: 'REALIZADO' // Comissão só é paga sobre aula REALIZADA
+      },
+      include: { client: true },
+      orderBy: { date: 'asc' }
+    });
+
+    const settings = await prisma.settings.findFirst();
+    
+    // Tabela base de valores da clínica
+    const prices = {
+      "PILATES_1X MENSAL": settings?.plan1xMensal || 150,
+      "PILATES_1X TRIMESTRAL": settings?.plan1xTrimestral || 400,
+      "PILATES_1X SEMESTRAL": settings?.plan1xSemestral || 750,
+      "PILATES_2X MENSAL": settings?.plan2xMensal || 250,
+      "PILATES_2X TRIMESTRAL": settings?.plan2xTrimestral || 700,
+      "PILATES_2X SEMESTRAL": settings?.plan2xSemestral || 1300,
+      "PILATES_3X MENSAL": settings?.plan3xMensal || 350,
+      "PILATES_3X TRIMESTRAL": settings?.plan3xTrimestral || 1000,
+      "PILATES_3X SEMESTRAL": settings?.plan3xSemestral || 1800,
+    };
+
+    const data = appts.map(app => {
+      let valorAula = 0;
+      let tipoStr = app.type ? app.type.replace(/_/g, ' ') : 'DESCONHECIDO';
+
+      if (app.type === 'EXPERIMENTAL') {
+        valorAula = settings?.priceExp || 50;
+      } else if (app.type === 'FISIO_SESSAO') {
+        valorAula = settings?.priceFisio || 150;
+      } else if (app.client?.plan) {
+        // É um plano! Vamos calcular a fração.
+        const planStr = app.client.plan.toUpperCase();
+        const totalPlano = prices[planStr as keyof typeof prices] || 0;
+        
+        let meses = 1;
+        if (planStr.includes("TRIMESTRAL")) meses = 4;
+        if (planStr.includes("SEMESTRAL")) meses = 6;
+        
+        let freq = 1;
+        if (planStr.includes("2X")) freq = 2;
+        if (planStr.includes("3X")) freq = 3;
+        if (planStr.includes("4X")) freq = 4;
+        if (planStr.includes("5X")) freq = 5;
+
+        const totalAulas = meses * 4 * freq;
+        valorAula = totalAulas > 0 ? totalPlano / totalAulas : 0;
+        tipoStr = planStr;
+      } else {
+        // Pilates Avulso
+        valorAula = settings?.pricePilates || 100;
+        tipoStr = 'PILATES AVULSO';
+      }
+
+      return {
+        id: app.id,
+        date: app.date.toISOString(),
+        clientName: app.client?.name || app.tempName || 'Desconhecido',
+        tipo: tipoStr,
+        valorAula
+      };
+    });
+
+    return { sucesso: true, data };
+  } catch (error) {
+    return { sucesso: false, erro: "Falha ao gerar relatório." };
+  }
 }

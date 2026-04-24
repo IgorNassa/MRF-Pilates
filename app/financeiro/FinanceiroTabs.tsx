@@ -1,11 +1,10 @@
-// app/financeiro/FinanceiroTabs.tsx
 'use client'
 
 import { useState, useEffect, Fragment } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, Clock, DollarSign, ArrowDownRight, ArrowUpRight, TrendingUp, Search, User, Plus, Edit, Trash2, Building, X, Save, Crown, MessageCircle, ChevronLeft, ChevronRight } from 'lucide-react'
-import { atualizarTransacao, deletarTransacao, criarTransacao, pagarParcelaPlano, desfazerPagamentoPlano, renovarPlanoCiclo } from '@/lib/actions'
+import { CheckCircle2, Clock, DollarSign, ArrowDownRight, ArrowUpRight, TrendingUp, Search, User, Plus, Edit, Trash2, Building, X, Save, Crown, MessageCircle, ChevronLeft, ChevronRight, Calculator } from 'lucide-react'
+import { atualizarTransacao, deletarTransacao, criarTransacao, pagarParcelaPlano, desfazerPagamentoPlano, renovarPlanoCiclo, getCommissionsReport } from '@/lib/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,8 +13,7 @@ import { ptBR } from 'date-fns/locale'
 
 export default function FinanceiroTabs({ initialTransactions, clients }: { initialTransactions: any[], clients: any[] }) {
   const router = useRouter()
-  // Aba 'A RECEBER' foi morta. A padrão agora é RECEBIDOS (do dia).
-  const [activeTab, setActiveTab] = useState<'RECEBIDOS' | 'DESPESAS' | 'PLANOS' | 'RESUMO'>('RECEBIDOS')
+  const [activeTab, setActiveTab] = useState<'RECEBIDOS' | 'DESPESAS' | 'PLANOS' | 'RESUMO' | 'COMISSOES'>('RECEBIDOS')
   
   const [localTransactions, setLocalTransactions] = useState(initialTransactions)
   useEffect(() => { setLocalTransactions(initialTransactions) }, [initialTransactions])
@@ -30,6 +28,15 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({ title: '', amount: '', type: 'RECEITA', category: 'OUTROS', status: 'PENDENTE', paymentMethod: 'PIX' })
 
+  // COMISSÕES STATES
+  const [comDateStart, setComDateStart] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'))
+  const [comDateEnd, setComDateEnd] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), 'yyyy-MM-dd'))
+  const [comInstructor, setComInstructor] = useState('Loani')
+  const [comPercent, setComPercent] = useState('30')
+  const [comData, setComData] = useState<any[]>([])
+  const [comLoading, setComLoading] = useState(false)
+  const [comSearched, setComSearched] = useState(false)
+
   // === FILTRAGEM INTELIGENTE ===
   const filteredData = localTransactions.filter(item => {
     if (activeTab === 'RECEBIDOS') return item.type === 'RECEITA' && (item.status === 'PAGO' || item.status === 'ISENTO') && isToday(new Date(item.date))
@@ -43,7 +50,7 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
     return false
   })
 
-  // === ORDENAÇÃO: 1º PENDENTES (A COBRAR), 2º MAIS RECENTES ===
+  // === ORDENAÇÃO ===
   const sortedData = [...filteredData].sort((a, b) => {
     if (a.status === 'PENDENTE' && b.status !== 'PENDENTE') return -1;
     if (b.status === 'PENDENTE' && a.status !== 'PENDENTE') return 1;
@@ -124,6 +131,13 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
     router.refresh()
   }
 
+  const handleGenerateCommissions = async () => {
+    setComLoading(true)
+    const res = await getCommissionsReport(comInstructor, comDateStart, comDateEnd)
+    if (res.sucesso) { setComData(res.data); setComSearched(true); }
+    setComLoading(false)
+  }
+
   let lastDateResumo = '';
   let lastDateGeral = '';
 
@@ -132,23 +146,23 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
       
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex gap-2 border-b border-slate-200 pb-px overflow-x-auto no-scrollbar w-full sm:w-auto">
-          {['RECEBIDOS', 'DESPESAS', 'PLANOS', 'RESUMO'].map((tab) => (
+          {['RECEBIDOS', 'DESPESAS', 'PLANOS', 'RESUMO', 'COMISSOES'].map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab as any)} className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${activeTab === tab ? 'border-[#0f5c4e] text-[#0f5c4e]' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>
               {tab === 'RESUMO' && <TrendingUp className="w-4 h-4" />}
               {tab === 'PLANOS' && <Crown className="w-4 h-4" />}
               {tab === 'DESPESAS' && <Building className="w-4 h-4" />}
+              {tab === 'COMISSOES' && <Calculator className="w-4 h-4" />}
               {tab.charAt(0) + tab.slice(1).toLowerCase()}
             </button>
           ))}
         </div>
-        {activeTab !== 'PLANOS' && (
+        {activeTab !== 'PLANOS' && activeTab !== 'COMISSOES' && (
           <Button onClick={() => setIsCreateModalOpen(true)} className="bg-[#0f5c4e] hover:bg-[#0a453a] text-white gap-2 rounded-xl shadow-sm">
-            <Plus className="w-4 h-4" /> Nova Lançamento
+            <Plus className="w-4 h-4" /> Novo Lançamento
           </Button>
         )}
       </div>
 
-      {/* ABA DE PLANOS (Oculta para resumir código, a lógica já está certa no seu sistema) */}
       {activeTab === 'PLANOS' && (
         <div className="grid gap-4 animate-in fade-in">
           {clientsComPlano.length === 0 ? (
@@ -231,29 +245,33 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
         </div>
       )}
 
-      {/* ABA RESUMO COM SEPARADOR INTELIGENTE */}
       {activeTab === 'RESUMO' && (
         <div className="space-y-6 animate-in fade-in">
-          
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="text-emerald-600 mb-2 font-semibold text-sm flex gap-2"><ArrowUpRight className="w-4 h-4" /> Receitas (Pagas)</div><h2 className="text-3xl font-black text-slate-800">R$ {totalReceitas.toFixed(2)}</h2></div>
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="text-amber-600 mb-2 font-semibold text-sm flex gap-2"><Clock className="w-4 h-4" /> A Receber (Pendentes)</div><h2 className="text-3xl font-black text-slate-800">R$ {totalPendentes.toFixed(2)}</h2></div>
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="text-red-600 mb-2 font-semibold text-sm flex gap-2"><ArrowDownRight className="w-4 h-4" /> Despesas Fixas/Avulsas</div><h2 className="text-3xl font-black text-slate-800">R$ {totalDespesas.toFixed(2)}</h2></div>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-emerald-600 mb-2 font-semibold text-sm flex gap-2"><ArrowUpRight className="w-4 h-4" /> Receitas (Pagas)</div>
+              <h2 className="text-3xl font-black text-slate-800">R$ {totalReceitas.toFixed(2)}</h2>
+            </div>
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-red-600 mb-2 font-semibold text-sm flex gap-2"><ArrowDownRight className="w-4 h-4" /> Despesas (Pagas)</div>
+              <h2 className="text-3xl font-black text-slate-800">R$ {totalDespesas.toFixed(2)}</h2>
+            </div>
+            <div className={`p-6 rounded-2xl border shadow-sm ${totalReceitas - totalDespesas >= 0 ? 'bg-[#0f5c4e] border-[#0a453a]' : 'bg-red-600 border-red-700'}`}>
+              <div className="text-white/80 mb-2 font-semibold text-sm flex gap-2"> Lucro do Mês</div>
+              <h2 className="text-3xl font-black text-white">R$ {(totalReceitas - totalDespesas).toFixed(2)}</h2>
+            </div>
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-amber-600 mb-2 font-semibold text-sm flex gap-2"><Clock className="w-4 h-4" /> A Receber (Pendentes)</div>
+              <h2 className="text-3xl font-black text-slate-800">R$ {totalPendentes.toFixed(2)}</h2>
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm items-center justify-between">
             <div className="flex items-center gap-4 w-full sm:w-auto">
-              <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 border border-slate-200 transition-colors">
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <h3 className="font-bold text-lg text-slate-800 capitalize min-w-[140px] text-center">
-                {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
-              </h3>
-              <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 border border-slate-200 transition-colors">
-                <ChevronRight className="w-5 h-5" />
-              </button>
+              <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 border border-slate-200 transition-colors"><ChevronLeft className="w-5 h-5" /></button>
+              <h3 className="font-bold text-lg text-slate-800 capitalize min-w-[140px] text-center">{format(currentMonth, 'MMMM yyyy', { locale: ptBR })}</h3>
+              <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 border border-slate-200 transition-colors"><ChevronRight className="w-5 h-5" /></button>
             </div>
-
             <div className="relative w-full sm:flex-1 sm:max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input placeholder="Buscar transação no mês..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-10 w-full" />
@@ -316,8 +334,90 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
         </div>
       )}
 
-      {/* ABAS COMUNS */}
-      {activeTab !== 'PLANOS' && activeTab !== 'RESUMO' && (
+      {/* ABA DE COMISSÕES */}
+      {activeTab === 'COMISSOES' && (
+        <div className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 sm:p-8 animate-in fade-in">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-[#0f5c4e]/10 text-[#0f5c4e] rounded-xl flex items-center justify-center"><Calculator className="w-6 h-6" /></div>
+            <div>
+              <h2 className="text-xl font-black text-slate-800">Painel de Comissões</h2>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-0.5">Cálculo Exato por Fração de Plano</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-100 rounded-2xl mb-8">
+            <div>
+              <label className="text-xs font-bold text-slate-500 mb-1.5 block">Instrutora</label>
+              <Select value={comInstructor} onValueChange={setComInstructor}>
+                <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="Loani">Dra. Loani</SelectItem><SelectItem value="Marisa">Dra. Marisa</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 mb-1.5 block">Data Inicial</label>
+              <Input type="date" value={comDateStart} onChange={e => setComDateStart(e.target.value)} className="bg-white font-medium" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 mb-1.5 block">Data Final</label>
+              <Input type="date" value={comDateEnd} onChange={e => setComDateEnd(e.target.value)} className="bg-white font-medium" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 mb-1.5 block">Porcentagem (%)</label>
+              <div className="relative">
+                <Input type="number" value={comPercent} onChange={e => setComPercent(e.target.value)} className="bg-white font-black text-[#0f5c4e] pr-8" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-slate-400">%</span>
+              </div>
+            </div>
+            <div className="sm:col-span-4 flex justify-end mt-2">
+              <Button onClick={handleGenerateCommissions} disabled={comLoading} className="bg-[#0f5c4e] hover:bg-[#0a453a] text-white font-bold h-11 px-8 shadow-md">
+                {comLoading ? 'Calculando...' : 'Gerar Relatório'}
+              </Button>
+            </div>
+          </div>
+
+          {comSearched && (
+            <div className="space-y-6 animate-in slide-in-from-bottom-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-5 border rounded-2xl bg-white shadow-sm">
+                  <p className="text-xs font-bold text-slate-500 uppercase">Aulas Realizadas</p>
+                  <p className="text-3xl font-black text-slate-800 mt-1">{comData.length}</p>
+                </div>
+                <div className="p-5 border rounded-2xl bg-white shadow-sm">
+                  <p className="text-xs font-bold text-slate-500 uppercase">Valor Bruto das Aulas</p>
+                  <p className="text-3xl font-black text-slate-800 mt-1">R$ {comData.reduce((acc, curr) => acc + curr.valorAula, 0).toFixed(2)}</p>
+                </div>
+                <div className="p-5 border-2 border-[#0f5c4e] rounded-2xl bg-[#0f5c4e]/5 shadow-md">
+                  <p className="text-xs font-bold text-[#0f5c4e] uppercase flex items-center gap-1"><DollarSign className="w-3 h-3"/> Comissão a Pagar</p>
+                  <p className="text-3xl font-black text-[#0a453a] mt-1">R$ {(comData.reduce((acc, curr) => acc + curr.valorAula, 0) * (Number(comPercent) / 100)).toFixed(2)}</p>
+                </div>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase">
+                    <tr><th className="px-4 py-3">Data</th><th className="px-4 py-3">Paciente</th><th className="px-4 py-3">Plano / Tipo</th><th className="px-4 py-3 text-right">Valor Base</th><th className="px-4 py-3 text-right text-[#0f5c4e]">Comissão</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {comData.map(row => (
+                      <tr key={row.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3 font-medium text-slate-600">{format(new Date(row.date), 'dd/MM/yyyy - HH:mm')}</td>
+                        <td className="px-4 py-3 font-bold text-slate-800">{row.clientName}</td>
+                        <td className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">{row.tipo}</td>
+                        <td className="px-4 py-3 text-right font-medium text-slate-600">R$ {row.valorAula.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right font-black text-[#0f5c4e]">R$ {(row.valorAula * (Number(comPercent) / 100)).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    {comData.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500 font-bold">Nenhuma aula realizada neste período.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ABAS COMUNS (Recebidos / Despesas) */}
+      {activeTab !== 'PLANOS' && activeTab !== 'RESUMO' && activeTab !== 'COMISSOES' && (
         <div className="grid gap-3 animate-in fade-in">
           {sortedData.length === 0 ? (
             <div className="p-12 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200 border-dashed">Nenhum registro encontrado {activeTab === 'RECEBIDOS' ? 'hoje' : ''}.</div>
@@ -366,7 +466,7 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
         </div>
       )}
 
-      {/* MODAL DE CONFIRMAR PAGAMENTO/RENOVAÇÃO */}
+      {/* MODAIS */}
       {paymentModalData && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95">
@@ -402,7 +502,6 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
         </div>
       )}
 
-      {/* MODAL DE EDIÇÃO DE TRANSAÇÃO */}
       {editingTransaction && (
         <div className="fixed inset-0 z-[60] bg-slate-900/40 flex items-center justify-center backdrop-blur-sm px-4 animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200">
@@ -446,7 +545,6 @@ export default function FinanceiroTabs({ initialTransactions, clients }: { initi
         </div>
       )}
 
-      {/* MODAL DE CRIAÇÃO DE TRANSAÇÃO */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-[60] bg-slate-900/40 flex items-center justify-center backdrop-blur-sm px-4 animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200">

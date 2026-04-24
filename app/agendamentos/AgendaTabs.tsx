@@ -1,3 +1,4 @@
+// app/agendamentos/AgendaTabs.tsx
 'use client'
 
 import { useState } from 'react'
@@ -44,7 +45,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
     selectedApptId: string | null 
   } | null>(null)
 
-  const [editDialog, setEditDialog] = useState<{ id: string, date: string, time: string, instructor: string } | null>(null)
+  const [editDialog, setEditDialog] = useState<{ id: string, date: string, time: string, instructor: string, isLocked: boolean } | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const toggleStudentPresence = (apptId: string) => {
@@ -125,13 +126,14 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
     router.refresh()
   }
 
-  const openEditModal = (appt: any) => {
+  const openEditModal = (appt: any, isLocked: boolean) => {
     const d = new Date(appt.date);
     setEditDialog({
       id: appt.id,
       date: format(d, 'yyyy-MM-dd'),
       time: format(d, 'HH:mm'),
-      instructor: appt.instructor
+      instructor: appt.instructor,
+      isLocked
     })
   }
 
@@ -216,14 +218,15 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                   <CloseIcon className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-8 space-y-6">
+              <div className="p-8 space-y-6 overflow-visible">
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Nova Data</label>
                   <input 
                     type="date" 
+                    disabled={editDialog.isLocked}
                     value={editDialog.date} 
                     onChange={(e) => setEditDialog({...editDialog, date: e.target.value})}
-                    className="w-full mt-1.5 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0f5c4e] focus:outline-none text-slate-800 font-medium bg-white"
+                    className={`w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium ${editDialog.isLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-white border-slate-200 focus:ring-2 focus:ring-[#0f5c4e] text-slate-800'}`}
                   />
                 </div>
                 
@@ -232,9 +235,10 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                     Novo Horário
                   </label>
                   <select 
+                    disabled={editDialog.isLocked}
                     value={editDialog.time}
                     onChange={(e) => setEditDialog({...editDialog, time: e.target.value})}
-                    className={`w-full mt-1.5 p-3 border rounded-xl focus:ring-2 focus:outline-none bg-white font-medium ${isTimeFull ? 'border-red-300 focus:ring-red-400 text-red-600 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : 'border-slate-200 focus:ring-[#0f5c4e] text-slate-800'}`}
+                    className={`w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium ${editDialog.isLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : isTimeFull ? 'border-red-300 focus:ring-red-400 text-red-600 bg-white' : 'border-slate-200 focus:ring-[#0f5c4e] text-slate-800 bg-white'}`}
                   >
                     {hours.map(h => {
                       const count = apptsOnEditDate.filter(a => format(new Date(a.date), 'HH:mm') === h).length;
@@ -246,7 +250,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                       )
                     })}
                   </select>
-                  {isTimeFull && <p className="text-[10px] text-red-500 mt-2 font-bold flex items-center gap-1.5 bg-red-50 p-2 rounded-lg border border-red-100"><AlertCircle className="w-3.5 h-3.5"/> Horário com capacidade máxima (4 alunos).</p>}
+                  {isTimeFull && !editDialog.isLocked && <p className="text-[10px] text-red-500 mt-2 font-bold flex items-center gap-1.5 bg-red-50 p-2 rounded-lg border border-red-100"><AlertCircle className="w-3.5 h-3.5"/> Horário com capacidade máxima (4 alunos).</p>}
                 </div>
 
                 <div>
@@ -262,6 +266,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                     <option value="Marisa">Dra. Marisa</option>
                     <option value="Loani">Dra. Loani</option>
                   </select>
+                  {editDialog.isLocked && <p className="text-[10px] text-orange-600 mt-2 font-bold bg-orange-50 p-2 rounded-lg border border-orange-100">Menos de 24h para a sessão. Apenas a troca de instrutora é permitida.</p>}
                   {isInstructorFull && (
                     <p className="text-[10px] text-red-500 mt-2 font-medium bg-red-50 p-2 rounded-lg border border-red-100">
                       A Dra. <b>{editDialog.instructor}</b> já possui o limite de 2 alunos neste horário. Por favor, escolha a outra instrutora ou altere o horário.
@@ -273,8 +278,8 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                 <Button variant="outline" onClick={() => setEditDialog(null)} disabled={isActionProcessing} className="font-bold h-12 px-6">Cancelar</Button>
                 <Button 
                   onClick={handleEditSubmit} 
-                  disabled={isActionProcessing || isInstructorFull || isTimeFull} 
-                  className={`text-white font-bold h-12 px-8 shadow-md transition-all ${(isActionProcessing || isInstructorFull || isTimeFull) ? 'bg-slate-300 cursor-not-allowed text-slate-500' : 'bg-[#0f5c4e] hover:bg-[#0a453a]'}`}
+                  disabled={isActionProcessing || isInstructorFull || (!editDialog.isLocked && isTimeFull)} 
+                  className={`text-white font-bold h-12 px-8 shadow-md transition-all ${(isActionProcessing || isInstructorFull || (!editDialog.isLocked && isTimeFull)) ? 'bg-slate-300 cursor-not-allowed text-slate-500' : 'bg-[#0f5c4e] hover:bg-[#0a453a]'}`}
                 >
                   {isActionProcessing ? 'A Salvar...' : 'Salvar Alteração'}
                 </Button>
@@ -503,7 +508,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                               const diffHoras = (new Date(appt.date).getTime() - new Date().getTime()) / (1000 * 60 * 60)
                               const isLocked = diffHoras < 24 && diffHoras > -1 
 
-                              // LÓGICA DO WHATSAPP COM AS TAGS DO SISTEMA DE CONFIGURAÇÕES
                               const phoneRaw = appt.client?.phone || appt.tempPhone;
                               const cleanPhone = phoneRaw ? phoneRaw.replace(/\D/g, '') : null;
                               const clientFirstName = (appt.client?.name || appt.tempName || 'Paciente').split(' ')[0];
@@ -522,7 +526,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                   
                                   <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-white border border-slate-200 p-1.5 rounded-lg shadow-xl z-20 scale-90 group-hover:scale-100">
                                     
-                                    {/* BOTÃO DO WHATSAPP */}
                                     {cleanPhone && !isRealizado && !isCancelado && !isFalta && (
                                         <span title="Enviar Lembrete por WhatsApp">
                                           <a href={wppUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 flex text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition-colors border border-transparent hover:border-emerald-100">
@@ -537,9 +540,9 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                       </span>
                                     )}
                                     
-                                    <span title={isLocked ? "Edição bloqueada (Menos de 24h)" : "Editar"}>
-                                        <button onClick={() => openEditModal(appt)} disabled={isLocked || isRealizado} className={`p-1.5 rounded-md transition-colors ${isLocked ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-slate-600 hover:bg-slate-100'}`}>
-                                          {isLocked ? <Lock className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
+                                    <span title={isLocked ? "Edição de Data bloqueada (<24h). Troca de instrutora permitida." : "Editar"}>
+                                        <button onClick={() => openEditModal(appt, isLocked)} disabled={isRealizado || isCancelado || isFalta} className={`p-1.5 rounded-md transition-colors ${isRealizado || isCancelado || isFalta ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-slate-600 hover:bg-slate-100'}`}>
+                                          {isLocked ? <User className="w-4 h-4 text-orange-500" /> : <Edit className="w-4 h-4" />}
                                         </button>
                                     </span>
 
@@ -573,7 +576,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                       {appt.client?.name || appt.tempName}
                                     </h4>
                                     <div className="flex gap-1 shrink-0 items-center">
-                                      {isLocked && !isRealizado && !isCancelado && <span title="Bloqueado para alterações (Regra 24h)"><Lock className="w-3 h-3 text-slate-300" /></span>}
+                                      {isLocked && !isRealizado && !isCancelado && <span title="Bloqueado para alterações de Data (Regra 24h)"><Lock className="w-3 h-3 text-slate-300" /></span>}
                                       {isFalta && <span className="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full uppercase">Falta</span>}
                                       {isRealizado && <span className="text-[8px] font-black bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full uppercase">Concluído</span>}
                                       {isCancelado && <span className="text-[8px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full uppercase">Cancelado</span>}
