@@ -204,7 +204,7 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
       const isMensal = novoPlano.toUpperCase().includes('MENSAL');
       await prisma.transaction.create({
         data: {
-          title: isMensal ? `Mensalidade 1 - ${novoPlano}` : `Plano - ${novoPlano}`,
+          title: isMensal ? `Mensalidade 1 - ${novoPlano}` : `Pacote - ${novoPlano}`,
           amount: paymentMethod === 'ISENTO' ? 0 : valorFinal,
           type: 'RECEITA',
           category: 'MENSALIDADE',
@@ -228,7 +228,11 @@ export async function removerPlanoCliente(clientId: string) {
   try {
     await prisma.client.update({
       where: { id: clientId },
-      data: { plan: null, planValue: null, planInstallments: null, planInstallmentsPaid: null, planLastPayment: null, planDueDate: null, planPaymentMethod: null, totalSessions: 0, remainingSessions: 0 }
+      data: { 
+        plan: null, planValue: null, planInstallments: null, planInstallmentsPaid: null, 
+        planLastPayment: null, planDueDate: null, planPaymentMethod: null, 
+        totalSessions: 0, remainingSessions: 0, repositionCredits: 0 
+      }
     })
     revalidatePath('/clientes')
     revalidatePath('/financeiro')
@@ -390,27 +394,59 @@ export async function confirmarPagamentoTransacao(id: string) {
   }
 }
 
-// ==========================================
-// 4. EVOLUÇÕES E GESTÃO DE AGENDAMENTOS
-// ==========================================
 export async function concluirSessaoComEvolucao(id: string, clientId?: string | null, evolucaoTexto?: string, instructor?: string) {
   try {
     await prisma.appointment.update({ where: { id }, data: { status: 'REALIZADO' } })
     if (clientId && evolucaoTexto && evolucaoTexto.trim() !== '') {
       await prisma.evolution.create({ data: { clientId, description: evolucaoTexto, instructor: instructor || 'Sistema' } })
     }
-    revalidatePath('/agendamentos')
-    revalidatePath('/financeiro')
+
+    // AUTO-RESET: Se não há mais saldo e nem aulas agendadas no futuro, limpa o pacote
+    if (clientId) {
+      const client = await prisma.client.findUnique({ where: { id: clientId } });
+      const futureAppts = await prisma.appointment.count({
+        where: { clientId, status: 'AGENDADO' }
+      });
+
+      if (client && client.plan && client.remainingSessions <= 0 && futureAppts === 0) {
+        await removerPlanoCliente(clientId);
+      }
+    }
+
+    revalidatePath('/agendamentos'); revalidatePath(`/clientes/${clientId}`);
     return { sucesso: true }
-  } catch (error) {
-    return { sucesso: false, erro: "Falha ao concluir sessão" }
-  }
+  } catch (error) { return { sucesso: false, erro: "Falha ao concluir" } }
 }
 
 export async function marcarFaltaAgendamento(id: string) {
   try {
-    await prisma.appointment.update({ where: { id }, data: { status: 'FALTA' } });
+    const appt = await prisma.appointment.update({ where: { id }, data: { status: 'FALTA' } });
+    
+    // =======================================================
+    // AUTO-RESET: CASO A FALTA SEJA DA ÚLTIMA AULA
+    // =======================================================
+    if (appt.clientId) {
+        const client = await prisma.client.findUnique({ where: { id: appt.clientId } });
+        if (client && client.plan && client.remainingSessions <= 0) {
+            const futureApptsCount = await prisma.appointment.count({
+                where: { clientId: appt.clientId, status: 'AGENDADO' }
+            });
+            if (futureApptsCount === 0) {
+                await prisma.client.update({
+                    where: { id: appt.clientId },
+                    data: {
+                        plan: null, planValue: null, planInstallments: null,
+                        planInstallmentsPaid: null, planLastPayment: null,
+                        planDueDate: null, planPaymentMethod: null,
+                        totalSessions: 0, remainingSessions: 0, repositionCredits: 0
+                    }
+                });
+            }
+        }
+    }
+
     revalidatePath('/agendamentos');
+    if (appt.clientId) revalidatePath(`/clientes/${appt.clientId}`)
     return { sucesso: true };
   } catch (error) {
     return { sucesso: false };
@@ -419,27 +455,26 @@ export async function marcarFaltaAgendamento(id: string) {
 
 export async function cancelarAgendamento(id: string) {
   try {
-    const appt = await prisma.appointment.update({
-      where: { id },
-      data: { status: 'CANCELADO' },
-      include: { client: true }
-    });
+    const appt = await prisma.appointment.findUnique({ where: { id }, include: { client: true } });
+    if (!appt) return { sucesso: false };
 
-    const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
-    const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
+    const isAulaDoPlano = appt.type?.includes('PILATES_');
+    const diffHoras = (new Date(appt.date).getTime() - new Date().getTime()) / (1000 * 60 * 60);
 
-    if (appt.clientId && appt.client?.plan && isAulaDoPlano) {
-      await prisma.client.update({
-        where: { id: appt.clientId },
-        data: { remainingSessions: { increment: 1 } }
-      });
+    if (diffHoras >= 24) {
+      // CANCELAMENTO ANTECIPADO: Vira saldo de reposição
+      await prisma.appointment.update({ where: { id }, data: { status: 'CANCELADO' } });
+      if (appt.clientId && isAulaDoPlano) {
+        await prisma.client.update({ where: { id: appt.clientId }, data: { repositionCredits: { increment: 1 } } });
+      }
+    } else {
+      // CANCELAMENTO TARDIO: Vira Falta (o saldo já foi descontado no agendamento e não volta)
+      await prisma.appointment.update({ where: { id }, data: { status: 'FALTA' } });
     }
 
-    revalidatePath('/agendamentos');
+    revalidatePath('/agendamentos'); revalidatePath(`/clientes/${appt.clientId}`);
     return { sucesso: true };
-  } catch (error) {
-    return { sucesso: false };
-  }
+  } catch (error) { return { sucesso: false } }
 }
 
 export async function converterEmReposicao(id: string) {
@@ -646,7 +681,6 @@ export async function validarAgendamentosPreview(dados: any) {
 
     if (datesToCheck.length === 0) return { sucesso: false, erro: "Nenhuma data selecionada ou o paciente não tem saldo suficiente." };
 
-    // Validação do banco em massa
     const datesOnly = datesToCheck.map(d => d.date);
     const minD = new Date(Math.min(...datesOnly.map(d => d.getTime())));
     const maxD = new Date(Math.max(...datesOnly.map(d => d.getTime())));
@@ -720,7 +754,6 @@ export async function efetivarAgendamentos(dadosFinais: any) {
       cancelOldApptIds
     } = dadosFinais;
 
-    // Converte os dados do Frontend de volta para as Datas Reais do Backend
     const datesToCheck = sessoesConfirmadas.map((s: any) => {
         const [hora, minuto] = s.timeStr.split(':');
         const d = new Date(`${s.dateStr}T${hora.padStart(2, '0')}:${minuto.padStart(2, '0')}:00-03:00`);
@@ -745,7 +778,6 @@ export async function efetivarAgendamentos(dadosFinais: any) {
       }
     }
 
-    // 1. CHECAGEM FINAL DE CONFLITOS
     const datesOnly = datesToCheck.map((d: any) => d.date);
     const minD = new Date(Math.min(...datesOnly.map((d: any) => d.getTime())));
     const maxD = new Date(Math.max(...datesOnly.map((d: any) => d.getTime())));
@@ -787,19 +819,16 @@ export async function efetivarAgendamentos(dadosFinais: any) {
         grouped[t] = inSlot;
     }
 
-    // 2. CANCELA AS ANTIGAS EM LOTE (ESTORNA O SALDO)
     if (cancelOldApptIds && cancelOldApptIds.length > 0) {
       await cancelarAgendamentosLote(cancelOldApptIds, clientId);
     }
 
-    // 3. DEBITA O SALDO DAS NOVAS
     if (useReposicao && clientId) {
       await prisma.client.update({ where: { id: clientId }, data: { repositionCredits: { decrement: datesToCheck.length } } });
     } else if (descontarDoPlano && clientId) {
       await prisma.client.update({ where: { id: clientId }, data: { remainingSessions: { decrement: datesToCheck.length } } });
     }
 
-    // 4. GRAVAR AS AULAS
     const apptsToCreate = datesToCheck.map((req: any) => ({
         clientId: tipoAgendamento === 'REGULAR' ? clientId : undefined,
         tempName: tipoAgendamento === 'EXPERIMENTAL' ? tempName : undefined,
@@ -809,7 +838,6 @@ export async function efetivarAgendamentos(dadosFinais: any) {
     
     const createdAppts = await Promise.all(apptsToCreate.map((data: any) => prisma.appointment.create({ data })));
 
-    // 5. GERAR FINANCEIRO SE FOR O CASO
     if (!useReposicao && !descontarDoPlano) {
       let precoPilatesAvulso = 100.00; let precoFisio = 150.00; let precoExp = 50.00;
       try {
@@ -983,7 +1011,7 @@ export async function getCommissionsReport(instructor: string, startDateStr: str
       where: {
         instructor,
         date: { gte: start, lte: end },
-        status: 'REALIZADO' // Comissão só é paga sobre aula REALIZADA
+        status: 'REALIZADO' 
       },
       include: { client: true },
       orderBy: { date: 'asc' }
@@ -991,7 +1019,6 @@ export async function getCommissionsReport(instructor: string, startDateStr: str
 
     const settings = await prisma.settings.findFirst();
     
-    // Tabela base de valores da clínica
     const prices = {
       "PILATES_1X MENSAL": settings?.plan1xMensal || 150,
       "PILATES_1X TRIMESTRAL": settings?.plan1xTrimestral || 400,
@@ -1013,25 +1040,31 @@ export async function getCommissionsReport(instructor: string, startDateStr: str
       } else if (app.type === 'FISIO_SESSAO') {
         valorAula = settings?.priceFisio || 150;
       } else if (app.client?.plan) {
-        // É um plano! Vamos calcular a fração.
         const planStr = app.client.plan.toUpperCase();
-        const totalPlano = prices[planStr as keyof typeof prices] || 0;
         
-        let meses = 1;
-        if (planStr.includes("TRIMESTRAL")) meses = 4;
-        if (planStr.includes("SEMESTRAL")) meses = 6;
-        
-        let freq = 1;
-        if (planStr.includes("2X")) freq = 2;
-        if (planStr.includes("3X")) freq = 3;
-        if (planStr.includes("4X")) freq = 4;
-        if (planStr.includes("5X")) freq = 5;
+        // CORREÇÃO AQUI: Verifica se o pacote foi dado como ISENTO
+        if (app.client.planPaymentMethod === 'ISENTO' || app.client.planValue === 0) {
+          valorAula = 0;
+          tipoStr = `${planStr} (ISENTO)`;
+        } else {
+          // Usa o valor real do plano (se existir) ou o padrão das configurações
+          const totalPlano = app.client.planValue || prices[planStr as keyof typeof prices] || 0;
+          
+          let meses = 1;
+          if (planStr.includes("TRIMESTRAL")) meses = 4;
+          if (planStr.includes("SEMESTRAL")) meses = 6;
+          
+          let freq = 1;
+          if (planStr.includes("2X")) freq = 2;
+          if (planStr.includes("3X")) freq = 3;
+          if (planStr.includes("4X")) freq = 4;
+          if (planStr.includes("5X")) freq = 5;
 
-        const totalAulas = meses * 4 * freq;
-        valorAula = totalAulas > 0 ? totalPlano / totalAulas : 0;
-        tipoStr = planStr;
+          const totalAulas = meses * 4 * freq;
+          valorAula = totalAulas > 0 ? totalPlano / totalAulas : 0;
+          tipoStr = planStr;
+        }
       } else {
-        // Pilates Avulso
         valorAula = settings?.pricePilates || 100;
         tipoStr = 'PILATES AVULSO';
       }

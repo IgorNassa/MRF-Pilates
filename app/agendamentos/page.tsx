@@ -5,15 +5,13 @@ import Link from 'next/link'
 import { Sidebar } from '@/components/sidebar'
 import { Button } from '@/components/ui/button' 
 import { Plus } from 'lucide-react' 
-import { getSettings } from '@/lib/actions' // <--- IMPORTAMOS AS CONFIGS AQUI
+import { getSettings } from '@/lib/actions' 
 
-// 🔥 ESTAS 3 LINHAS MATAM O CACHE FANTASMA DO NEXT.JS
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 export const revalidate = 0
 
 export default async function AgendamentosPage() {
-  // 1. Busca os dados no banco
   const appointmentsRaw = await prisma.appointment.findMany({
     include: {
       client: {
@@ -21,14 +19,16 @@ export default async function AgendamentosPage() {
           id: true,
           name: true,
           plan: true,
-          phone: true 
+          phone: true,
+          totalSessions: true, // <-- ADICIONADO
+          remainingSessions: true, // <-- ADICIONADO
+          planLastPayment: true // <-- ADICIONADO
         }
       }
     },
     orderBy: { date: 'asc' }
   });
 
-  // 2. Transforma as datas do servidor em texto ISO 
   const appointments = appointmentsRaw.map(app => ({
     ...app,
     date: app.date.toISOString(),
@@ -36,7 +36,6 @@ export default async function AgendamentosPage() {
     updatedAt: app.updatedAt.toISOString(),
   }));
 
-  // 3. BUSCA O TEMPLATE DA MENSAGEM NAS CONFIGURAÇÕES
   const settings = await getSettings();
   const msgConfirmacao = settings?.msgConfirmacao || "Olá [NOME], passando para confirmar sua sessão de Pilates hoje às [HORA].";
 
@@ -62,7 +61,6 @@ export default async function AgendamentosPage() {
             </Button>
           </div>
           
-          {/* PASSAMOS A MENSAGEM COMO PROP PARA A AGENDA */}
           <AgendaTabs initialAppointments={appointments} msgConfirmacao={msgConfirmacao} />
           
         </div>

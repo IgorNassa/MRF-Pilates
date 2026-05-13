@@ -2,18 +2,16 @@
 import { getClientById, getSettings } from "@/lib/actions"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, HeartPulse, FileText, Stethoscope, MessageCircle, AlertCircle, Crown, Zap, CalendarDays, DollarSign } from "lucide-react"
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, HeartPulse, FileText, Stethoscope, MessageCircle, AlertCircle, Crown, Zap, DollarSign, Ticket, CalendarClock, CheckCircle2, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sidebar } from "@/components/sidebar"
 import PlanButtons from "./PlanButtons"
 import EvolutionList from "./EvolutionList"
 import ClientFinanceHistory from "./ClientFinanceHistory"
-import ClientAppointmentsManager from "./ClientAppointmentsManager" // <-- COMPONENTE NOVO IMPORTADO AQUI
+import ClientAppointmentsManager from "./ClientAppointmentsManager"
 
 export default async function ClientProfilePage({ params }: { params: { id: string } }) {
   const client = await getClientById(params.id)
-  
-  // Buscar configurações para enviar os preços atualizados para o PlanButtons
   const settings = await getSettings()
 
   if (!client) {
@@ -23,43 +21,35 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
   const zapNumber = client.phone.replace(/\D/g, '')
   const zapLink = `https://wa.me/55${zapNumber}?text=Olá%20${encodeURIComponent(client.name.split(' ')[0])},%20tudo%20bem?%20Aqui%20é%20da%20clínica%20MRF%20Pilates.`
 
-  const planStr = (client.plan || "").toUpperCase()
-  let mesesDuracao = 0
-  let totalSessoesPlano = 0
+  // =========================================================
+  // MOTOR DE CÁLCULO DE PACOTES (À PROVA DE FALHAS)
+  // =========================================================
+  const totalComprado = client.totalSessions || 0
+  
+  // 1. Usamos a data da última venda do pacote como "Ponto de Partida" para não contar aulas antigas de pacotes passados
+  const cycleStart = client.planLastPayment ? new Date(client.planLastPayment).getTime() : new Date(client.createdAt).getTime()
+  
+  // 2. Pegar todas as aulas (que não foram canceladas) a partir da compra do pacote atual
+  const aulasValidasDoCiclo = (client.appointments || []).filter((a: any) => 
+    a.type?.includes('PILATES_') && 
+    a.status !== 'CANCELADO' && 
+    new Date(a.date).getTime() >= cycleStart
+  )
 
-  if (planStr.includes("MENSAL")) mesesDuracao = 1
-  if (planStr.includes("TRIMESTRAL")) mesesDuracao = 4 
-  if (planStr.includes("SEMESTRAL")) mesesDuracao = 6
-
-  if (planStr.includes("1X")) totalSessoesPlano = 4 * mesesDuracao
-  if (planStr.includes("2X")) totalSessoesPlano = 8 * mesesDuracao
-  if (planStr.includes("3X")) totalSessoesPlano = 12 * mesesDuracao
-  if (planStr.includes("5X")) totalSessoesPlano = 20 * mesesDuracao
-  if (planStr.includes("FISIO")) totalSessoesPlano = 10 
-
-  let dataVencimento = null
-  let diasParaVencer = null
-  let isVencido = false
-  const hoje = new Date()
-
-  if (mesesDuracao > 0) {
-    const dataReferencia = client.planLastPayment ? new Date(client.planLastPayment) : new Date(client.createdAt)
-    dataVencimento = new Date(dataReferencia)
-    dataVencimento.setMonth(dataVencimento.getMonth() + mesesDuracao)
-    dataVencimento.setDate(client.planDueDate || 10) 
-    
-    const diffTime = dataVencimento.getTime() - hoje.getTime()
-    diasParaVencer = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    isVencido = diasParaVencer < 0
-  }
-
-  const sessoesRealizadas = (client as any).appointments?.filter((a: any) => a.status === 'REALIZADO').length || 0
-  const progressPercentage = totalSessoesPlano > 0 ? Math.min((sessoesRealizadas / totalSessoesPlano) * 100, 100) : 0
+  // 3. Faltas contam como consumidas! (FALTA ou REALIZADO)
+  const aulasConcluidas = aulasValidasDoCiclo.filter((a: any) => a.status === 'REALIZADO' || a.status === 'FALTA').length
+  
+  // 4. Aulas que estão na agenda pro futuro
+  const aulasFuturasNaAgenda = aulasValidasDoCiclo.filter((a: any) => a.status === 'AGENDADO').length
+  
+  // 5. Saldo Livre (Ignora a coluna do banco e calcula a matemática real na hora)
+  const saldoLivreParaAgendar = Math.max(0, totalComprado - (aulasConcluidas + aulasFuturasNaAgenda))
+  
+  // 6. Barra de Progresso
+  const progressPercentage = totalComprado > 0 ? Math.min((aulasConcluidas / totalComprado) * 100, 100) : 0
 
   const generalDocs = Array.isArray(client.generalDocsLinks) ? client.generalDocsLinks : []
   const examDocs = Array.isArray(client.examDocsLinks) ? client.examDocsLinks : []
-
-  // Pegamos as transações de receitas do paciente
   const transacoesPaciente = client.transactions?.filter(t => t.type === 'RECEITA') || []
 
   return (
@@ -81,7 +71,6 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
 
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-8 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 print:block print:mt-0 print:mx-4">
           
-          {/* COLUNA ESQUERDA */}
           <div className="lg:col-span-4 space-y-6 print:hidden">
             
             <div className="bg-card rounded-2xl sm:rounded-3xl border border-border shadow-sm p-6 sm:p-8 flex flex-col items-center text-center transition-all hover:shadow-md">
@@ -96,7 +85,7 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
               </div>
               <h2 className="text-xl sm:text-2xl font-bold text-foreground break-words w-full">{client.name}</h2>
               <p className="text-sm sm:text-base text-muted-foreground font-medium mb-6 flex items-center gap-1.5 justify-center">
-                {client.plan ? <><Crown className="w-4 h-4 text-amber-500" /> {client.plan.replace(/_/g, ' ')}</> : "Sem plano vinculado"}
+                {client.plan ? <><Crown className="w-4 h-4 text-amber-500" /> {client.plan.replace(/_/g, ' ')}</> : "Sem pacote ativo"}
               </p>
               
               <a href={zapLink} target="_blank" rel="noreferrer" className="w-full">
@@ -110,17 +99,13 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
             <div className="bg-card rounded-2xl sm:rounded-3xl border border-border shadow-sm overflow-hidden">
               <div className="bg-muted/30 border-b border-border p-5 sm:p-6 flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-foreground flex items-center gap-2"><Zap className="w-4 h-4 text-primary" /> Assinatura</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">Gestão de pacote e sessões</p>
+                  <h3 className="font-bold text-foreground flex items-center gap-2"><Zap className="w-4 h-4 text-primary" /> Pacote de Sessões</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">Gestão de pacote e aulas</p>
                 </div>
                 <PlanButtons 
                   clientId={client.id} 
                   currentPlan={client.plan} 
                   planValue={client.planValue}
-                  planInstallments={client.planInstallments}
-                  planInstallmentsPaid={client.planInstallmentsPaid}
-                  planDueDate={client.planDueDate}
-                  planPaymentMethod={(client as any).planPaymentMethod}
                   settings={settings} 
                 />
               </div>
@@ -130,9 +115,9 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
                   <>
                     <div>
                       <div className="flex justify-between items-end mb-2">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Sessões Concluídas</span>
+                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Aulas Concluídas</span>
                         <span className="text-xl font-black text-primary">
-                          {sessoesRealizadas}<span className="text-sm text-muted-foreground font-semibold">/{totalSessoesPlano || '?'}</span>
+                          {aulasConcluidas}<span className="text-sm text-muted-foreground font-semibold">/{totalComprado}</span>
                         </span>
                       </div>
                       <div className="w-full bg-muted/50 rounded-full h-3 overflow-hidden shadow-inner">
@@ -140,32 +125,53 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <div className="bg-muted/30 border border-border p-3 rounded-xl">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Valor do Plano</p>
-                        <p className="font-bold text-foreground mt-0.5">{client.planValue === 0 ? 'ISENTO' : `R$ ${client.planValue?.toFixed(2) || '0.00'}`}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+                      <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl flex flex-col items-center justify-center text-center">
+                        <Ticket className="w-4 h-4 text-slate-400 mb-1" />
+                        <p className="text-[9px] font-bold text-slate-500 uppercase">Compradas</p>
+                        <p className="font-black text-lg text-slate-800">{totalComprado}</p>
                       </div>
-                      <div className="bg-muted/30 border border-border p-3 rounded-xl">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Pagamento</p>
-                        <p className="font-bold text-foreground mt-0.5">{(client as any).planPaymentMethod?.replace(/_/g, ' ') || 'PIX'}</p>
+                      <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col items-center justify-center text-center">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 mb-1" />
+                        <p className="text-[9px] font-bold text-emerald-600 uppercase">Concluídas</p>
+                        <p className="font-black text-lg text-emerald-700">{aulasConcluidas}</p>
+                      </div>
+                      <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl flex flex-col items-center justify-center text-center">
+                        <CalendarClock className="w-4 h-4 text-indigo-500 mb-1" />
+                        <p className="text-[9px] font-bold text-indigo-600 uppercase">Marcadas</p>
+                        <p className="font-black text-lg text-indigo-700">{aulasFuturasNaAgenda}</p>
+                      </div>
+                      <div className={`p-3 rounded-xl flex flex-col items-center justify-center text-center border ${saldoLivreParaAgendar > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                        <Zap className={`w-4 h-4 mb-1 ${saldoLivreParaAgendar > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
+                        <p className={`text-[9px] font-bold uppercase ${saldoLivreParaAgendar > 0 ? 'text-amber-600' : 'text-slate-500'}`}>Saldo Livre</p>
+                        <p className={`font-black text-lg ${saldoLivreParaAgendar > 0 ? 'text-amber-600' : 'text-slate-700'}`}>{saldoLivreParaAgendar}</p>
                       </div>
                     </div>
 
-                    {dataVencimento && (
-                      <div className={`p-4 rounded-xl border flex items-start gap-3 ${isVencido ? 'bg-destructive/10 border-destructive/20 text-destructive' : 'bg-amber-500/10 border-amber-500/20 text-amber-600'}`}>
-                        <CalendarDays className={`w-5 h-5 shrink-0`} />
+                    {client.repositionCredits > 0 && (
+                      <div className="bg-orange-50 border border-orange-200 p-3 rounded-xl flex items-center gap-4 mt-3">
+                        <div className="bg-orange-100 p-2 rounded-lg text-orange-500"><RotateCcw className="w-5 h-5"/></div>
                         <div>
-                          <h4 className="font-bold text-sm">Fim do Ciclo / Vencimento</h4>
-                          <p className="text-xs opacity-90 mt-0.5">
-                            {dataVencimento.toLocaleDateString('pt-BR')} <strong className="ml-1">({isVencido ? `Vencido há ${Math.abs(diasParaVencer!)} dias` : `Vence em ${diasParaVencer} dias`})</strong>
-                          </p>
+                          <p className="text-[10px] font-bold text-orange-600 uppercase">Reposições Disponíveis</p>
+                          <p className="font-black text-xl text-orange-700">{client.repositionCredits} <span className="text-sm font-bold text-orange-500">Saldos Livres</span></p>
                         </div>
                       </div>
                     )}
+
+                    <div className="grid grid-cols-2 gap-3 mt-4">
+                      <div className="bg-muted/30 border border-border p-3 rounded-xl">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Valor do Pacote</p>
+                        <p className="font-bold text-foreground mt-0.5">{client.planValue === 0 ? 'ISENTO' : `R$ ${client.planValue?.toFixed(2) || '0.00'}`}</p>
+                      </div>
+                      <div className="bg-muted/30 border border-border p-3 rounded-xl">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Forma de Pagamento</p>
+                        <p className="font-bold text-foreground mt-0.5">{(client as any).planPaymentMethod?.replace(/_/g, ' ') || 'PIX'}</p>
+                      </div>
+                    </div>
                   </>
                 ) : (
                   <div className="text-center p-4 bg-muted/30 rounded-xl border border-dashed border-border">
-                    <p className="text-sm text-muted-foreground">O paciente não possui um plano fixo. As sessões estão sendo tratadas como avulsas.</p>
+                    <p className="text-sm text-muted-foreground">O paciente não possui um pacote ativo. As sessões estão sendo tratadas como avulsas.</p>
                   </div>
                 )}
               </div>
@@ -194,13 +200,10 @@ export default async function ClientProfilePage({ params }: { params: { id: stri
             </div>
           </div>
 
-          {/* COLUNA DIREITA */}
           <div className="lg:col-span-8 space-y-6 sm:space-y-8 print:space-y-6">
 
-            {/* MANAGER DE AGENDAMENTOS EM LOTE (REMANEJAR / CANCELAR) AQUI NO TOPO! */}
             <ClientAppointmentsManager client={client} appointments={(client as any).appointments || []} />
             
-            {/* COMPONENTE DO HISTÓRICO FINANCEIRO */}
             <div className="bg-card rounded-2xl sm:rounded-3xl border border-border shadow-sm p-6 sm:p-8">
               <div className="flex items-center gap-3 mb-4 sm:mb-6 border-b border-border pb-4">
                 <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-600" />

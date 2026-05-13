@@ -7,7 +7,7 @@ import { ptBR } from 'date-fns/locale'
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, User, Clock, Activity, Edit, Trash2, 
   UserX, CheckCircle2, Lock, XCircle, RotateCcw, Play, Users, AlertCircle, X as CloseIcon,
-  Stethoscope, FileText, MessageCircle
+  Stethoscope, FileText, MessageCircle, Ticket
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -468,7 +468,32 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
           <div className="p-4 sm:p-8">
             <div className="space-y-6 sm:space-y-8 relative">
               {hours.map(hour => {
-                const apptsInSlot = dailyAppointments.filter(app => format(new Date(app.date), 'HH:mm') === hour)
+                const rawApptsInSlot = dailyAppointments.filter(app => format(new Date(app.date), 'HH:mm') === hour)
+                
+                // Mapeia e injeta as variáveis isLastSession
+                const apptsInSlot = rawApptsInSlot.map(appt => {
+                  let isLastSession = false;
+                  let sessionBadge = "";
+                  if (appt.type.includes('PILATES_') && appt.client?.plan) {
+                      const cycleStart = appt.client.planLastPayment ? new Date(appt.client.planLastPayment).getTime() : 0;
+                      const clientAppts = initialAppointments.filter(a => 
+                          a.clientId === appt.clientId && 
+                          a.type.includes('PILATES_') && 
+                          a.status !== 'CANCELADO' &&
+                          new Date(a.date).getTime() >= cycleStart
+                      ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                      
+                      const idx = clientAppts.findIndex(a => a.id === appt.id);
+                      if (idx !== -1 && appt.client.totalSessions) {
+                          sessionBadge = ` (${idx + 1}/${appt.client.totalSessions})`;
+                          if (idx + 1 === appt.client.totalSessions) {
+                              isLastSession = true;
+                          }
+                      }
+                  }
+                  return { ...appt, _isLastSession: isLastSession, _sessionBadge: sessionBadge };
+                });
+
                 const isRoomActive = activeRoomHour === hour
                 const pendingAppts = apptsInSlot.filter(a => a.status !== 'CANCELADO' && a.status !== 'REALIZADO')
 
@@ -524,6 +549,12 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                               return (
                                 <div key={appt.id} className={`group relative p-4 rounded-xl border transition-all ${isCancelado ? 'bg-red-50/40 border-red-100 opacity-50' : isRealizado ? 'bg-emerald-50 border-emerald-100 shadow-sm' : isFalta ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200 hover:shadow-md'}`}>
                                   
+                                  {appt._isLastSession && !isRealizado && !isCancelado && (
+                                    <div className="absolute top-0 right-12 translate-y-[-50%] bg-orange-500 text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm z-30 flex items-center gap-1 border border-white">
+                                      <Ticket className="w-2.5 h-2.5"/> Última do Pacote
+                                    </div>
+                                  )}
+
                                   <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-white border border-slate-200 p-1.5 rounded-lg shadow-xl z-20 scale-90 group-hover:scale-100">
                                     
                                     {cleanPhone && !isRealizado && !isCancelado && !isFalta && (
@@ -553,18 +584,16 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                     )}
 
                                     {!isRealizado && !isCancelado && (
-                                      <span title={isLocked ? "Reposição bloqueada (Aviso tardio)" : "Gerar Reposição"}>
-                                        <button disabled={isLocked} onClick={() => handleAction(converterEmReposicao, appt.id, "Gerar Reposição", "O aluno avisou com antecedência? Isso irá adicionar um crédito de reposição e liberar a vaga.")} className={`p-1.5 rounded-md transition-colors ${isLocked ? 'text-slate-300 opacity-50' : 'text-orange-500 hover:bg-orange-50'}`}>
+                                      <span title="Gerar Reposição">
+                                        <button onClick={() => handleAction(converterEmReposicao, appt.id, "Gerar Reposição", "O aluno avisou com antecedência? Isso irá adicionar um crédito de reposição e liberar a vaga.")} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded-md transition-colors">
                                           <RotateCcw className="w-4 h-4" />
                                         </button>
                                       </span>
                                     )}
 
-                                    {!isRealizado && !isCancelado && (
-                                      <span title="Cancelar">
-                                          <button disabled={isLocked} onClick={() => handleAction(cancelarAgendamento, appt.id, "Cancelar Sessão", "Deseja cancelar sem gerar reposição?")} className="p-1.5 text-red-400 hover:bg-red-50 rounded-md disabled:opacity-30"><XCircle className="w-4 h-4" /></button>
-                                      </span>
-                                    )}
+                                    <span title="Cancelar">
+                                        <button onClick={() => handleAction(cancelarAgendamento, appt.id, "Cancelar Sessão", "Deseja cancelar a aula?")} className="p-1.5 text-red-400 hover:bg-red-50 rounded-md"><XCircle className="w-4 h-4" /></button>
+                                    </span>
 
                                     <span title="Excluir Permanentemente">
                                         <button onClick={() => handleAction(deletarAgendamento, appt.id, "Excluir Agendamento", "Atenção: Esta ação apagará permanentemente o registo do banco de dados. Deseja continuar?")} className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"><Trash2 className="w-4 h-4" /></button>
@@ -587,6 +616,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                     <span className="flex items-center gap-1.5 bg-slate-50 w-fit px-2 py-0.5 rounded-md border border-slate-100">
                                       <Activity className="w-3 h-3 text-[#0f5c4e]" />
                                       {appt.type.replace(/_/g, ' ')}
+                                      {appt._sessionBadge && <span className="text-[#0f5c4e] font-black">{appt._sessionBadge}</span>}
                                     </span>
                                     <span className="flex items-center gap-1.5 px-2 italic">
                                       <User className="w-3 h-3 opacity-60" />
@@ -614,15 +644,20 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
 
                           <div className="space-y-3 mb-6">
                             {pendingAppts.map(appt => (
-                              <label key={appt.id} className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${presentStudents.includes(appt.id) ? 'bg-emerald-50/50 border-[#0f5c4e]/40 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
+                              <label key={appt.id} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${presentStudents.includes(appt.id) ? 'bg-emerald-50/50 border-[#0f5c4e]/40 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
                                 <Checkbox 
                                   checked={presentStudents.includes(appt.id)} 
                                   onCheckedChange={() => toggleStudentPresence(appt.id)} 
-                                  className="data-[state=checked]:bg-[#0f5c4e] data-[state=checked]:border-[#0f5c4e] w-6 h-6 rounded-md"
+                                  className="data-[state=checked]:bg-[#0f5c4e] data-[state=checked]:border-[#0f5c4e] w-6 h-6 rounded-md mt-1"
                                 />
                                 <div className="flex-1">
                                   <p className={`text-base font-black ${presentStudents.includes(appt.id) ? 'text-[#0f5c4e]' : 'text-slate-700'}`}>{appt.client?.name || appt.tempName}</p>
                                   <p className="text-xs text-slate-500 font-medium mt-0.5">Instrutor(a): {appt.instructor}</p>
+                                  {appt._isLastSession && (
+                                    <p className="text-[10px] font-black text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 w-fit mt-1.5 flex items-center gap-1.5">
+                                      <AlertCircle className="w-3.5 h-3.5" /> Atenção: Esta é a última aula do pacote atual.
+                                    </p>
+                                  )}
                                 </div>
                                 {presentStudents.includes(appt.id) && <span className="text-[10px] font-black text-[#0f5c4e] bg-[#0f5c4e]/10 px-3 py-1.5 rounded-lg uppercase tracking-widest animate-in zoom-in-50">Presente</span>}
                               </label>

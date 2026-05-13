@@ -1,42 +1,39 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { AuthProvider } from "@/components/auth-provider";
-import { Toaster } from "@/components/ui/toaster";
-import { ThemeProvider } from "@/components/theme-provider";
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css" 
+import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/toaster"
+import { TimerProvider } from "@/hooks/use-timer" // <-- 1. IMPORTAÇÃO DO PROVIDER AQUI
 
-// 1. ADICIONE ESTAS DUAS LINHAS
-import { TimerProvider } from "@/hooks/use-timer";
-import { GlobalTimer } from "@/components/global-timer";
-
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "MRF Pilates - Gestão",
-  description: "Sistema de gestão para estúdios de Pilates",
-};
+  title: "MRF Pilates",
+  description: "Sistema de Gestão para Studio MRF Pilates",
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
-        <AuthProvider>
-          <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-            
-            {/* 2. ENVOLVA O SEU SISTEMA COM O PROVIDER */}
-            <TimerProvider>
-              {children}
-              <GlobalTimer /> {/* A bolinha mágica nasce aqui */}
-            </TimerProvider>
-
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          forcedTheme="light"
+          enableSystem={false} 
+          disableTransitionOnChange
+        >
+          {/* 2. ENVELOPA A APLICAÇÃO COM O TIMER PROVIDER */}
+          <TimerProvider>
+            {children}
             <Toaster />
-          </ThemeProvider>
-        </AuthProvider>
+          </TimerProvider>
+        </ThemeProvider>
       </body>
     </html>
-  );
+  )
 }
