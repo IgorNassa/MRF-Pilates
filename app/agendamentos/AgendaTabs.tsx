@@ -45,7 +45,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
     selectedApptId: string | null 
   } | null>(null)
 
-  const [editDialog, setEditDialog] = useState<{ id: string, date: string, time: string, instructor: string, isLocked: boolean } | null>(null)
+  const [editDialog, setEditDialog] = useState<{ id: string, date: string, time: string, instructor: string } | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const toggleStudentPresence = (apptId: string) => {
@@ -126,14 +126,13 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
     router.refresh()
   }
 
-  const openEditModal = (appt: any, isLocked: boolean) => {
+  const openEditModal = (appt: any) => {
     const d = new Date(appt.date);
     setEditDialog({
       id: appt.id,
       date: format(d, 'yyyy-MM-dd'),
       time: format(d, 'HH:mm'),
-      instructor: appt.instructor,
-      isLocked
+      instructor: appt.instructor
     })
   }
 
@@ -223,10 +222,9 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Nova Data</label>
                   <input 
                     type="date" 
-                    disabled={editDialog.isLocked}
                     value={editDialog.date} 
                     onChange={(e) => setEditDialog({...editDialog, date: e.target.value})}
-                    className={`w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium ${editDialog.isLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-white border-slate-200 focus:ring-2 focus:ring-[#0f5c4e] text-slate-800'}`}
+                    className="w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium bg-white border-slate-200 focus:ring-2 focus:ring-[#0f5c4e] text-slate-800"
                   />
                 </div>
                 
@@ -235,10 +233,9 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                     Novo Horário
                   </label>
                   <select 
-                    disabled={editDialog.isLocked}
                     value={editDialog.time}
                     onChange={(e) => setEditDialog({...editDialog, time: e.target.value})}
-                    className={`w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium ${editDialog.isLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : isTimeFull ? 'border-red-300 focus:ring-red-400 text-red-600 bg-white' : 'border-slate-200 focus:ring-[#0f5c4e] text-slate-800 bg-white'}`}
+                    className={`w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium ${isTimeFull ? 'border-red-300 focus:ring-red-400 text-red-600 bg-white' : 'border-slate-200 focus:ring-[#0f5c4e] text-slate-800 bg-white'}`}
                   >
                     {hours.map(h => {
                       const count = apptsOnEditDate.filter(a => format(new Date(a.date), 'HH:mm') === h).length;
@@ -250,7 +247,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                       )
                     })}
                   </select>
-                  {isTimeFull && !editDialog.isLocked && <p className="text-[10px] text-red-500 mt-2 font-bold flex items-center gap-1.5 bg-red-50 p-2 rounded-lg border border-red-100"><AlertCircle className="w-3.5 h-3.5"/> Horário com capacidade máxima (4 alunos).</p>}
+                  {isTimeFull && <p className="text-[10px] text-red-500 mt-2 font-bold flex items-center gap-1.5 bg-red-50 p-2 rounded-lg border border-red-100"><AlertCircle className="w-3.5 h-3.5"/> Horário com capacidade máxima (4 alunos).</p>}
                 </div>
 
                 <div>
@@ -266,7 +263,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                     <option value="Marisa">Dra. Marisa</option>
                     <option value="Loani">Dra. Loani</option>
                   </select>
-                  {editDialog.isLocked && <p className="text-[10px] text-orange-600 mt-2 font-bold bg-orange-50 p-2 rounded-lg border border-orange-100">Menos de 24h para a sessão. Apenas a troca de instrutora é permitida.</p>}
                   {isInstructorFull && (
                     <p className="text-[10px] text-red-500 mt-2 font-medium bg-red-50 p-2 rounded-lg border border-red-100">
                       A Dra. <b>{editDialog.instructor}</b> já possui o limite de 2 alunos neste horário. Por favor, escolha a outra instrutora ou altere o horário.
@@ -278,8 +274,8 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                 <Button variant="outline" onClick={() => setEditDialog(null)} disabled={isActionProcessing} className="font-bold h-12 px-6">Cancelar</Button>
                 <Button 
                   onClick={handleEditSubmit} 
-                  disabled={isActionProcessing || isInstructorFull || (!editDialog.isLocked && isTimeFull)} 
-                  className={`text-white font-bold h-12 px-8 shadow-md transition-all ${(isActionProcessing || isInstructorFull || (!editDialog.isLocked && isTimeFull)) ? 'bg-slate-300 cursor-not-allowed text-slate-500' : 'bg-[#0f5c4e] hover:bg-[#0a453a]'}`}
+                  disabled={isActionProcessing || isInstructorFull || isTimeFull} 
+                  className={`text-white font-bold h-12 px-8 shadow-md transition-all ${(isActionProcessing || isInstructorFull || isTimeFull) ? 'bg-slate-300 cursor-not-allowed text-slate-500' : 'bg-[#0f5c4e] hover:bg-[#0a453a]'}`}
                 >
                   {isActionProcessing ? 'A Salvar...' : 'Salvar Alteração'}
                 </Button>
@@ -470,7 +466,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
               {hours.map(hour => {
                 const rawApptsInSlot = dailyAppointments.filter(app => format(new Date(app.date), 'HH:mm') === hour)
                 
-                // Mapeia e injeta as variáveis isLastSession
                 const apptsInSlot = rawApptsInSlot.map(appt => {
                   let isLastSession = false;
                   let sessionBadge = "";
@@ -549,12 +544,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                               return (
                                 <div key={appt.id} className={`group relative p-4 rounded-xl border transition-all ${isCancelado ? 'bg-red-50/40 border-red-100 opacity-50' : isRealizado ? 'bg-emerald-50 border-emerald-100 shadow-sm' : isFalta ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200 hover:shadow-md'}`}>
                                   
-                                  {appt._isLastSession && !isRealizado && !isCancelado && (
-                                    <div className="absolute top-0 right-12 translate-y-[-50%] bg-orange-500 text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm z-30 flex items-center gap-1 border border-white">
-                                      <Ticket className="w-2.5 h-2.5"/> Última do Pacote
-                                    </div>
-                                  )}
-
                                   <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-white border border-slate-200 p-1.5 rounded-lg shadow-xl z-20 scale-90 group-hover:scale-100">
                                     
                                     {cleanPhone && !isRealizado && !isCancelado && !isFalta && (
@@ -571,9 +560,9 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                       </span>
                                     )}
                                     
-                                    <span title={isLocked ? "Edição de Data bloqueada (<24h). Troca de instrutora permitida." : "Editar"}>
-                                        <button onClick={() => openEditModal(appt, isLocked)} disabled={isRealizado || isCancelado || isFalta} className={`p-1.5 rounded-md transition-colors ${isRealizado || isCancelado || isFalta ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-slate-600 hover:bg-slate-100'}`}>
-                                          {isLocked ? <User className="w-4 h-4 text-orange-500" /> : <Edit className="w-4 h-4" />}
+                                    <span title="Editar Data/Horário e Instrutor">
+                                        <button onClick={() => openEditModal(appt)} disabled={isRealizado || isCancelado || isFalta} className={`p-1.5 rounded-md transition-colors ${isRealizado || isCancelado || isFalta ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-slate-600 hover:bg-slate-100'}`}>
+                                          <Edit className="w-4 h-4" />
                                         </button>
                                     </span>
 
@@ -600,15 +589,21 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                     </span>
                                   </div>
 
-                                  <div className="flex justify-between items-start mb-2.5 gap-2 pr-10">
-                                    <h4 className={`font-bold text-sm truncate ${isCancelado || isFalta ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                                      {appt.client?.name || appt.tempName}
-                                    </h4>
-                                    <div className="flex gap-1 shrink-0 items-center">
-                                      {isLocked && !isRealizado && !isCancelado && <span title="Bloqueado para alterações de Data (Regra 24h)"><Lock className="w-3 h-3 text-slate-300" /></span>}
-                                      {isFalta && <span className="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full uppercase">Falta</span>}
-                                      {isRealizado && <span className="text-[8px] font-black bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full uppercase">Concluído</span>}
-                                      {isCancelado && <span className="text-[8px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full uppercase">Cancelado</span>}
+                                  <div className="pr-10">
+                                    {appt._isLastSession && !isRealizado && !isCancelado && (
+                                      <div className="mb-1.5 flex w-fit items-center gap-1.5 bg-orange-100 text-orange-600 border border-orange-200 text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm">
+                                        <Ticket className="w-3 h-3"/> Última Aula do Pacote
+                                      </div>
+                                    )}
+                                    <div className="flex justify-between items-start mb-2.5 gap-2">
+                                      <h4 className={`font-bold text-sm truncate ${isCancelado || isFalta ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                        {appt.client?.name || appt.tempName}
+                                      </h4>
+                                      <div className="flex gap-1 shrink-0 items-center">
+                                        {isFalta && <span className="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full uppercase">Falta</span>}
+                                        {isRealizado && <span className="text-[8px] font-black bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full uppercase">Concluído</span>}
+                                        {isCancelado && <span className="text-[8px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full uppercase">Cancelado</span>}
+                                      </div>
                                     </div>
                                   </div>
                                   
