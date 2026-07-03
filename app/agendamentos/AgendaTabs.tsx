@@ -25,7 +25,7 @@ interface EvolutionData {
 
 export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = "" }: { initialAppointments: any[], msgConfirmacao?: string }) {
   const router = useRouter()
-  const { timerSeconds, isTimerRunning, startClass, timerHour, stopClass, formatTime } = useTimer()
+  const { stopClass } = useTimer()
 
   const [currentDate, setCurrentDate] = useState(new Date())
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 })
@@ -45,7 +45,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
     selectedApptId: string | null 
   } | null>(null)
 
-  const [editDialog, setEditDialog] = useState<{ id: string, date: string, time: string, instructor: string } | null>(null)
+  const [editDialog, setEditDialog] = useState<{ id: string, date: string, time: string, instructor: string, isLocked: boolean } | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const toggleStudentPresence = (apptId: string) => {
@@ -80,19 +80,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
 
   const handleFinishClassRequest = (apptsToFinish: any[]) => {
     if (apptsToFinish.length === 0) return;
-    
-    if (timerHour === activeRoomHour && timerSeconds > 0) {
-      setConfirmDialog({
-        title: "Atenção: Aula Incompleta",
-        message: `O cronómetro ainda marca ${formatTime(timerSeconds)} restantes. Tem a certeza que deseja finalizar a sessão antes dos 50 minutos?`,
-        action: async () => {
-          setConfirmDialog(null)
-          openEvolutionModal(apptsToFinish)
-        }
-      })
-    } else {
-      openEvolutionModal(apptsToFinish)
-    }
+    openEvolutionModal(apptsToFinish)
   }
 
   const openEvolutionModal = (appts: any[]) => {
@@ -132,7 +120,8 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
       id: appt.id,
       date: format(d, 'yyyy-MM-dd'),
       time: format(d, 'HH:mm'),
-      instructor: appt.instructor
+      instructor: appt.instructor,
+      isLocked: false
     })
   }
 
@@ -224,7 +213,7 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                     type="date" 
                     value={editDialog.date} 
                     onChange={(e) => setEditDialog({...editDialog, date: e.target.value})}
-                    className="w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium bg-white border-slate-200 focus:ring-2 focus:ring-[#0f5c4e] text-slate-800"
+                    className={`w-full mt-1.5 p-3 border rounded-xl focus:outline-none font-medium bg-white border-slate-200 focus:ring-2 focus:ring-[#0f5c4e] text-slate-800`}
                   />
                 </div>
                 
@@ -525,9 +514,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                               const isRealizado = appt.status === 'REALIZADO'
                               const isFalta = appt.status === 'FALTA'
 
-                              const diffHoras = (new Date(appt.date).getTime() - new Date().getTime()) / (1000 * 60 * 60)
-                              const isLocked = diffHoras < 24 && diffHoras > -1 
-
                               const phoneRaw = appt.client?.phone || appt.tempPhone;
                               const cleanPhone = phoneRaw ? phoneRaw.replace(/\D/g, '') : null;
                               const clientFirstName = (appt.client?.name || appt.tempName || 'Paciente').split(' ')[0];
@@ -666,17 +652,13 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                           </div>
 
                           <div className="flex flex-col sm:flex-row gap-3 pt-5 border-t border-slate-100">
-                            {timerHour !== hour ? (
-                              <Button onClick={() => startClass(hour)} disabled={isTimerRunning || pendingAppts.length === 0} className="bg-slate-900 hover:bg-slate-800 text-white flex-1 font-bold h-14 rounded-xl shadow-md text-sm">
-                                <Play className="w-5 h-5 mr-2" /> Iniciar Sessão e Cronómetro
-                              </Button>
-                            ) : (
-                              <div className="flex-1 flex gap-3">
-                                <Button onClick={() => handleFinishClassRequest(apptsInSlot.filter(a => presentStudents.includes(a.id)))} disabled={presentStudents.length === 0} className="bg-[#0f5c4e] hover:bg-[#0a453a] text-white flex-1 font-bold h-14 rounded-xl shadow-lg text-sm">
-                                  <CheckCircle2 className="w-5 h-5 mr-2" /> Finalizar Sessão
-                                </Button>
-                              </div>
-                            )}
+                            <Button 
+                              onClick={() => handleFinishClassRequest(apptsInSlot.filter(a => presentStudents.includes(a.id)))} 
+                              disabled={presentStudents.length === 0} 
+                              className="bg-[#0f5c4e] hover:bg-[#0a453a] text-white flex-1 font-bold h-14 rounded-xl shadow-lg text-sm"
+                            >
+                              <CheckCircle2 className="w-5 h-5 mr-2" /> Finalizar Sessão e Evoluir
+                            </Button>
                           </div>
                         </div>
                       )}

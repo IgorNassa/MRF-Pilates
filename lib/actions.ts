@@ -1,3 +1,4 @@
+// lib/actions.ts
 "use server"
 
 import prisma from "./prisma"
@@ -189,14 +190,45 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
     
     const statusFinal = (paymentMethod === 'ISENTO') ? 'ISENTO' : (isPendente ? 'PENDENTE' : 'PAGO');
     const parcelasPagas = (statusFinal === 'PAGO' || statusFinal === 'ISENTO') ? 1 : 0;
+    
+    const agora = new Date();
+
+    // REGRA FORTE: Encontrar aulas futuras já agendadas para absorvê-las no novo pacote
+    const futureAppts = await prisma.appointment.findMany({
+      where: {
+        clientId,
+        status: 'AGENDADO',
+        date: { gte: agora },
+        type: { contains: 'PILATES_' }
+      }
+    });
+
+    const futureApptsCount = futureAppts.length;
+    // O saldo livre a ser gravado é o total do pacote deduzido das aulas que já ocupam a agenda
+    const saldoCorrigido = Math.max(0, totalAulas - futureApptsCount);
+
+    // Mapear o novo tipo de sessão para as aulas futuras assumirem a identidade do novo pacote
+    let novoTipoSessao = "PILATES_1X";
+    if (frequencia === 2) novoTipoSessao = "PILATES_2X";
+    if (frequencia === 3) novoTipoSessao = "PILATES_3X";
+    if (frequencia === 4) novoTipoSessao = "PILATES_4X";
+    if (frequencia === 5) novoTipoSessao = "PILATES_5X";
+
+    // Se haviam aulas futuras antigas, transforma a 'tag' delas para a frequência nova
+    if (futureApptsCount > 0) {
+      await prisma.appointment.updateMany({
+        where: { id: { in: futureAppts.map(a => a.id) } },
+        data: { type: novoTipoSessao as any }
+      });
+    }
 
     await prisma.client.update({
       where: { id: clientId },
       data: { 
         plan: novoPlano, planValue: valorFinal, planInstallments: parcelas, planPaymentMethod: paymentMethod,
-        planInstallmentsPaid: parcelasPagas, planLastPayment: new Date(), planDueDate: vencimento,
+        planInstallmentsPaid: parcelasPagas, planLastPayment: agora, planDueDate: vencimento,
         totalSessions: totalAulas, 
-        remainingSessions: totalAulas 
+        remainingSessions: saldoCorrigido 
       }
     })
 
@@ -211,13 +243,14 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
           status: statusFinal as any, 
           paymentMethod: paymentMethod,
           clientId: clientId,
-          date: new Date() 
+          date: agora 
         }
       })
     }
 
     revalidatePath('/clientes')
     revalidatePath('/financeiro')
+    revalidatePath('/agendamentos')
     return { sucesso: true }
   } catch (error) {
     return { sucesso: false, erro: "Falha ao atualizar plano" }
@@ -226,6 +259,17 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
 
 export async function removerPlanoCliente(clientId: string) {
   try {
+    // REGRA FORTE: Ao encerrar/excluir um pacote, devemos liberar a agenda cancelando as aulas futuras vinculadas a ele.
+    await prisma.appointment.updateMany({
+        where: {
+            clientId,
+            status: 'AGENDADO',
+            type: { contains: 'PILATES_' },
+            date: { gte: new Date() }
+        },
+        data: { status: 'CANCELADO' }
+    });
+
     await prisma.client.update({
       where: { id: clientId },
       data: { 
@@ -234,8 +278,10 @@ export async function removerPlanoCliente(clientId: string) {
         totalSessions: 0, remainingSessions: 0, repositionCredits: 0 
       }
     })
+    
     revalidatePath('/clientes')
     revalidatePath('/financeiro')
+    revalidatePath('/agendamentos')
     return { sucesso: true }
   } catch (error) {
     return { sucesso: false, erro: "Falha ao remover plano" }
@@ -394,6 +440,9 @@ export async function confirmarPagamentoTransacao(id: string) {
   }
 }
 
+// ==========================================
+// 4. EVOLUÇÕES E GESTÃO DE AGENDAMENTOS
+// ==========================================
 export async function concluirSessaoComEvolucao(id: string, clientId?: string | null, evolucaoTexto?: string, instructor?: string) {
   try {
     await prisma.appointment.update({ where: { id }, data: { status: 'REALIZADO' } })
@@ -401,21 +450,30 @@ export async function concluirSessaoComEvolucao(id: string, clientId?: string | 
       await prisma.evolution.create({ data: { clientId, description: evolucaoTexto, instructor: instructor || 'Sistema' } })
     }
 
-    // AUTO-RESET: Se não há mais saldo e nem aulas agendadas no futuro, limpa o pacote
+    // =======================================================
+    // AUTO-RESET: SE ESTA FOR A ÚLTIMA AULA DO PACOTE, ZERA TUDO
+    // =======================================================
     if (clientId) {
-      const client = await prisma.client.findUnique({ where: { id: clientId } });
-      const futureAppts = await prisma.appointment.count({
-        where: { clientId, status: 'AGENDADO' }
-      });
-
-      if (client && client.plan && client.remainingSessions <= 0 && futureAppts === 0) {
-        await removerPlanoCliente(clientId);
-      }
+        const client = await prisma.client.findUnique({ where: { id: clientId } });
+        if (client && client.plan && client.remainingSessions <= 0) {
+            const futureApptsCount = await prisma.appointment.count({
+                where: { clientId, status: 'AGENDADO' }
+            });
+            
+            // Se o saldo é zero e não há mais nada agendado pra frente:
+            if (futureApptsCount === 0) {
+                await removerPlanoCliente(clientId);
+            }
+        }
     }
 
-    revalidatePath('/agendamentos'); revalidatePath(`/clientes/${clientId}`);
+    revalidatePath('/agendamentos')
+    revalidatePath('/financeiro')
+    if (clientId) revalidatePath(`/clientes/${clientId}`)
     return { sucesso: true }
-  } catch (error) { return { sucesso: false, erro: "Falha ao concluir" } }
+  } catch (error) {
+    return { sucesso: false, erro: "Falha ao concluir sessão" }
+  }
 }
 
 export async function marcarFaltaAgendamento(id: string) {
@@ -432,15 +490,7 @@ export async function marcarFaltaAgendamento(id: string) {
                 where: { clientId: appt.clientId, status: 'AGENDADO' }
             });
             if (futureApptsCount === 0) {
-                await prisma.client.update({
-                    where: { id: appt.clientId },
-                    data: {
-                        plan: null, planValue: null, planInstallments: null,
-                        planInstallmentsPaid: null, planLastPayment: null,
-                        planDueDate: null, planPaymentMethod: null,
-                        totalSessions: 0, remainingSessions: 0, repositionCredits: 0
-                    }
-                });
+                await removerPlanoCliente(appt.clientId);
             }
         }
     }
@@ -455,26 +505,45 @@ export async function marcarFaltaAgendamento(id: string) {
 
 export async function cancelarAgendamento(id: string) {
   try {
-    const appt = await prisma.appointment.findUnique({ where: { id }, include: { client: true } });
+    const appt = await prisma.appointment.findUnique({
+      where: { id },
+      include: { client: true }
+    });
+
     if (!appt) return { sucesso: false };
 
-    const isAulaDoPlano = appt.type?.includes('PILATES_');
-    const diffHoras = (new Date(appt.date).getTime() - new Date().getTime()) / (1000 * 60 * 60);
+    const isAvulsa = await prisma.transaction.findFirst({ where: { appointmentId: id } });
+    const isAulaDoPlano = appt.type && String(appt.type).includes('PILATES_') && !isAvulsa;
+
+    const agora = new Date().getTime();
+    const dataAula = new Date(appt.date).getTime();
+    const diffHoras = (dataAula - agora) / (1000 * 60 * 60);
 
     if (diffHoras >= 24) {
-      // CANCELAMENTO ANTECIPADO: Vira saldo de reposição
-      await prisma.appointment.update({ where: { id }, data: { status: 'CANCELADO' } });
-      if (appt.clientId && isAulaDoPlano) {
-        await prisma.client.update({ where: { id: appt.clientId }, data: { repositionCredits: { increment: 1 } } });
+      await prisma.appointment.update({
+        where: { id },
+        data: { status: 'CANCELADO' }
+      });
+
+      if (appt.clientId && appt.client?.plan && isAulaDoPlano) {
+        await prisma.client.update({
+          where: { id: appt.clientId },
+          data: { repositionCredits: { increment: 1 } }
+        });
       }
     } else {
-      // CANCELAMENTO TARDIO: Vira Falta (o saldo já foi descontado no agendamento e não volta)
-      await prisma.appointment.update({ where: { id }, data: { status: 'FALTA' } });
+      await prisma.appointment.update({
+        where: { id },
+        data: { status: 'FALTA' }
+      });
     }
 
-    revalidatePath('/agendamentos'); revalidatePath(`/clientes/${appt.clientId}`);
+    revalidatePath('/agendamentos');
+    if(appt.clientId) revalidatePath(`/clientes/${appt.clientId}`);
     return { sucesso: true };
-  } catch (error) { return { sucesso: false } }
+  } catch (error) {
+    return { sucesso: false };
+  }
 }
 
 export async function converterEmReposicao(id: string) {
@@ -1042,12 +1111,10 @@ export async function getCommissionsReport(instructor: string, startDateStr: str
       } else if (app.client?.plan) {
         const planStr = app.client.plan.toUpperCase();
         
-        // CORREÇÃO AQUI: Verifica se o pacote foi dado como ISENTO
         if (app.client.planPaymentMethod === 'ISENTO' || app.client.planValue === 0) {
           valorAula = 0;
           tipoStr = `${planStr} (ISENTO)`;
         } else {
-          // Usa o valor real do plano (se existir) ou o padrão das configurações
           const totalPlano = app.client.planValue || prices[planStr as keyof typeof prices] || 0;
           
           let meses = 1;
