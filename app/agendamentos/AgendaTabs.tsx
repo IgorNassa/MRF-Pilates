@@ -1,3 +1,5 @@
+'use client'
+
 import { useState } from 'react'
 import { format, addDays, startOfWeek, subWeeks, addWeeks, isSameDay, isToday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
