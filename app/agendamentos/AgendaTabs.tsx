@@ -1,6 +1,3 @@
-// app/agendamentos/AgendaTabs.tsx
-'use client'
-
 import { useState } from 'react'
 import { format, addDays, startOfWeek, subWeeks, addWeeks, isSameDay, isToday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -156,7 +153,9 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
     return { index: i, date, shortName: format(date, 'EEee', { locale: ptBR }).split('-')[0], dayNumber: format(date, 'dd') }
   })
 
-  const dailyAppointments = initialAppointments.filter(app => isSameDay(new Date(app.date), selectedDate))
+  const dailyAppointments = initialAppointments.filter(app =>
+    app.status !== 'CANCELADO' && isSameDay(new Date(app.date), selectedDate)
+  )
   
   const hours = [
     "07:30", "08:30", "09:30", "10:30", "11:30",
@@ -453,7 +452,9 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
           <div className="p-4 sm:p-8">
             <div className="space-y-6 sm:space-y-8 relative">
               {hours.map(hour => {
-                const rawApptsInSlot = dailyAppointments.filter(app => format(new Date(app.date), 'HH:mm') === hour)
+                const rawApptsInSlot = dailyAppointments.filter(app =>
+                  format(new Date(app.date), 'HH:mm') === hour
+                )
                 
                 const apptsInSlot = rawApptsInSlot.map(appt => {
                   let isLastSession = false;
@@ -510,7 +511,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                             <div className="flex items-center justify-center sm:justify-start text-sm text-slate-300 font-bold italic py-4">Nenhum paciente marcado</div>
                           ) : (
                             apptsInSlot.map((appt) => {
-                              const isCancelado = appt.status === 'CANCELADO'
                               const isRealizado = appt.status === 'REALIZADO'
                               const isFalta = appt.status === 'FALTA'
 
@@ -528,11 +528,11 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                               const wppUrl = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(wppMsg)}` : '#';
 
                               return (
-                                <div key={appt.id} className={`group relative p-4 rounded-xl border transition-all ${isCancelado ? 'bg-red-50/40 border-red-100 opacity-50' : isRealizado ? 'bg-emerald-50 border-emerald-100 shadow-sm' : isFalta ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200 hover:shadow-md'}`}>
+                                <div key={appt.id} className={`group relative p-4 rounded-xl border transition-all ${isRealizado ? 'bg-emerald-50 border-emerald-100 shadow-sm' : isFalta ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200 hover:shadow-md'}`}>
                                   
                                   <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-white border border-slate-200 p-1.5 rounded-lg shadow-xl z-20 scale-90 group-hover:scale-100">
                                     
-                                    {cleanPhone && !isRealizado && !isCancelado && !isFalta && (
+                                    {cleanPhone && !isRealizado && !isFalta && (
                                         <span title="Enviar Lembrete por WhatsApp">
                                           <a href={wppUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 flex text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition-colors border border-transparent hover:border-emerald-100">
                                             <MessageCircle className="w-4 h-4" />
@@ -540,25 +540,25 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                         </span>
                                     )}
 
-                                    {!isRealizado && !isCancelado && (
+                                    {!isRealizado && !isFalta && (
                                       <span title="Concluir e Evoluir">
                                           <button onClick={() => setConfirmDialog({ title: 'Atenção', message: 'Use o botão de Gerir Turma (à esquerda) para preencher a evolução completa.', action: async () => setConfirmDialog(null) })} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors border border-transparent hover:border-emerald-100"><CheckCircle2 className="w-4 h-4" /></button>
                                       </span>
                                     )}
                                     
                                     <span title="Editar Data/Horário e Instrutor">
-                                        <button onClick={() => openEditModal(appt)} disabled={isRealizado || isCancelado || isFalta} className={`p-1.5 rounded-md transition-colors ${isRealizado || isCancelado || isFalta ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-slate-600 hover:bg-slate-100'}`}>
+                                        <button onClick={() => openEditModal(appt)} disabled={isRealizado || isFalta} className={`p-1.5 rounded-md transition-colors ${isRealizado || isFalta ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-slate-600 hover:bg-slate-100'}`}>
                                           <Edit className="w-4 h-4" />
                                         </button>
                                     </span>
 
-                                    {!isRealizado && !isFalta && !isCancelado && (
+                                    {!isRealizado && !isFalta && (
                                       <span title="Marcar Falta">
                                           <button onClick={() => handleAction(marcarFaltaAgendamento, appt.id, "Confirmar Falta", "Tem a certeza que o paciente não compareceu e deseja marcar como Falta?")} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md transition-colors"><UserX className="w-4 h-4" /></button>
                                       </span>
                                     )}
 
-                                    {!isRealizado && !isCancelado && (
+                                    {!isRealizado && (
                                       <span title="Gerar Reposição">
                                         <button onClick={() => handleAction(converterEmReposicao, appt.id, "Gerar Reposição", "O aluno avisou com antecedência? Isso irá adicionar um crédito de reposição e liberar a vaga.")} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded-md transition-colors">
                                           <RotateCcw className="w-4 h-4" />
@@ -576,19 +576,18 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                                   </div>
 
                                   <div className="pr-10">
-                                    {appt._isLastSession && !isRealizado && !isCancelado && (
+                                    {appt._isLastSession && !isRealizado && (
                                       <div className="mb-1.5 flex w-fit items-center gap-1.5 bg-orange-100 text-orange-600 border border-orange-200 text-[9px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm">
                                         <Ticket className="w-3 h-3"/> Última Aula do Pacote
                                       </div>
                                     )}
                                     <div className="flex justify-between items-start mb-2.5 gap-2">
-                                      <h4 className={`font-bold text-sm truncate ${isCancelado || isFalta ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                      <h4 className={`font-bold text-sm truncate ${isFalta ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
                                         {appt.client?.name || appt.tempName}
                                       </h4>
                                       <div className="flex gap-1 shrink-0 items-center">
                                         {isFalta && <span className="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full uppercase">Falta</span>}
                                         {isRealizado && <span className="text-[8px] font-black bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full uppercase">Concluído</span>}
-                                        {isCancelado && <span className="text-[8px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full uppercase">Cancelado</span>}
                                       </div>
                                     </div>
                                   </div>

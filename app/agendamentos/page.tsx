@@ -13,6 +13,7 @@ export const revalidate = 0
 
 export default async function AgendamentosPage() {
   const appointmentsRaw = await prisma.appointment.findMany({
+    where: { status: { not: 'CANCELADO' } },
     include: {
       client: {
         select: {

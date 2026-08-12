@@ -6,10 +6,10 @@ import { Sidebar } from "@/components/sidebar"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Search, Plus, Filter, Trash2, Edit, AlertTriangle } from "lucide-react"
+import { Search, Plus, Filter, Trash2, Edit, AlertTriangle, Power } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ClientModal } from "@/components/client-modal"
-import { getClients, deleteClient } from "@/lib/actions"
+import { getClients, deleteClient, inativarCliente, ativarCliente } from "@/lib/actions"
 
 const getStatusColor = (status: string) => {
   switch (status?.toLowerCase()) {
@@ -34,6 +34,8 @@ export default function ClientsPage() {
   // Estados para Exclusão (Dupla Verificação)
   const [clientToDelete, setClientToDelete] = useState<any | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [clientToToggleStatus, setClientToToggleStatus] = useState<any | null>(null)
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
 
   // Estado para Edição (Próximo passo)
   const [clientToEdit, setClientToEdit] = useState<any | null>(null)
@@ -66,6 +68,18 @@ export default function ClientsPage() {
     setClientToDelete(null)
     setIsDeleting(false)
     loadClients()
+  }
+
+  const confirmStatusToggle = async () => {
+    if (!clientToToggleStatus) return
+    setIsUpdatingStatus(true)
+    const action = clientToToggleStatus.status === 'ativo' ? inativarCliente : ativarCliente
+    const result = await action(clientToToggleStatus.id)
+    setIsUpdatingStatus(false)
+    if (result.sucesso) {
+      setClientToToggleStatus(null)
+      loadClients()
+    }
   }
 
   // MOTOR DE BUSCA E FILTRO EM TEMPO REAL
@@ -203,6 +217,15 @@ export default function ClientsPage() {
 
                     {/* Botões de Ação Rápida (Aparecem no Hover ou são fixos no mobile) */}
                     <div className="flex items-center gap-2 justify-end sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setClientToToggleStatus(client)}
+                        className={`rounded-full h-9 w-9 ${client.status === 'ativo' ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50' : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'}`}
+                        title={client.status === 'ativo' ? 'Inativar aluno' : 'Reativar aluno'}
+                      >
+                        <Power className="h-4.5 w-4.5" />
+                      </Button>
                       <Button 
                         variant="ghost" 
                         size="icon" 
@@ -251,6 +274,28 @@ export default function ClientsPage() {
               </Button>
               <Button type="button" onClick={confirmDelete} disabled={isDeleting} className="flex-1 rounded-xl h-11 bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold shadow-md">
                 {isDeleting ? "A excluir..." : "Sim, Excluir"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clientToToggleStatus && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl border border-border animate-in zoom-in-95">
+            <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full mb-4 ${clientToToggleStatus.status === 'ativo' ? 'bg-amber-500/10 text-amber-600' : 'bg-emerald-500/10 text-emerald-600'}`}>
+              <Power className="h-8 w-8" />
+            </div>
+            <h2 className="text-xl font-bold text-center text-foreground">{clientToToggleStatus.status === 'ativo' ? 'Inativar aluno?' : 'Reativar aluno?'}</h2>
+            <p className="mt-2 text-sm text-center text-muted-foreground">
+              {clientToToggleStatus.status === 'ativo'
+                ? <>As aulas futuras de <strong className="text-foreground">{clientToToggleStatus.name}</strong> serão canceladas, sairão da agenda e as aulas do pacote voltarão ao saldo.</>
+                : <>O aluno <strong className="text-foreground">{clientToToggleStatus.name}</strong> poderá receber novos agendamentos novamente.</>}
+            </p>
+            <div className="flex gap-3 mt-8">
+              <Button type="button" variant="outline" onClick={() => setClientToToggleStatus(null)} disabled={isUpdatingStatus} className="flex-1 rounded-xl h-11 font-semibold">Cancelar</Button>
+              <Button type="button" onClick={confirmStatusToggle} disabled={isUpdatingStatus} className={`flex-1 rounded-xl h-11 font-bold shadow-md ${clientToToggleStatus.status === 'ativo' ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+                {isUpdatingStatus ? 'A guardar...' : clientToToggleStatus.status === 'ativo' ? 'Sim, Inativar' : 'Sim, Reativar'}
               </Button>
             </div>
           </div>
