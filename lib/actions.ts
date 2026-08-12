@@ -1,4 +1,3 @@
-// lib/actions.ts
 "use server"
 
 import prisma from "./prisma"
@@ -171,9 +170,57 @@ export async function getClients() {
   return await prisma.client.findMany({ orderBy: { name: 'asc' } })
 }
 
-// ==========================================
-// 3. GESTÃO DE PLANOS & FINANCEIRO
-// ==========================================
+export async function inativarCliente(id: string) {
+  try {
+    const aulasFuturas = await prisma.appointment.findMany({
+      where: { clientId: id, status: 'AGENDADO', date: { gte: new Date() } },
+      include: { transaction: { select: { id: true } } }
+    });
+
+    const aulasDoPacote = aulasFuturas.filter(aula =>
+      aula.type.toString().startsWith('PILATES_') && !aula.transaction
+    ).length;
+
+    await prisma.$transaction([
+      prisma.client.update({
+        where: { id },
+        data: {
+          status: 'inativo',
+          remainingSessions: { increment: aulasDoPacote }
+        }
+      }),
+      prisma.appointment.updateMany({
+        where: { id: { in: aulasFuturas.map(aula => aula.id) } },
+        data: { status: 'CANCELADO' }
+      })
+    ]);
+
+    revalidatePath('/clientes');
+    revalidatePath(`/clientes/${id}`);
+    revalidatePath('/agendamentos');
+    revalidatePath('/agendamentos/novo');
+    return { sucesso: true };
+  } catch (error) {
+    return { sucesso: false, erro: "Falha ao inativar cliente." };
+  }
+}
+
+export async function ativarCliente(id: string) {
+  try {
+    await prisma.client.update({
+      where: { id },
+      data: { status: 'ativo' }
+    });
+
+    revalidatePath('/clientes');
+    revalidatePath(`/clientes/${id}`);
+    revalidatePath('/agendamentos/novo');
+    return { sucesso: true };
+  } catch (error) {
+    return { sucesso: false, erro: "Falha ao ativar cliente." };
+  }
+}
+
 // ==========================================
 // 3. GESTÃO DE PLANOS & FINANCEIRO (BLINDADO)
 // ==========================================
@@ -197,7 +244,6 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
     
     const agora = new Date();
 
-    // Busca todas as aulas futuras do paciente e ORDENA da mais próxima para a mais longe
     const futureAppts = await prisma.appointment.findMany({
       where: { 
         clientId, 
@@ -215,11 +261,9 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
 
     let saldoCorrigido = 0;
 
-    // LÓGICA DE CONSISTÊNCIA DE SALDO E AGENDA
     if (futureAppts.length > totalAulas) {
-        // DOWNGRADE: Tem mais aulas marcadas do que o novo pacote permite
         const aulasParaManter = futureAppts.slice(0, totalAulas);
-        const aulasParaCancelar = futureAppts.slice(totalAulas); // O Excesso
+        const aulasParaCancelar = futureAppts.slice(totalAulas);
 
         if (aulasParaManter.length > 0) {
             await prisma.appointment.updateMany({
@@ -235,9 +279,8 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
             });
         }
 
-        saldoCorrigido = 0; // Gastou todo o pacote novo nas aulas que já estavam marcadas
+        saldoCorrigido = 0;
     } else {
-        // UPGRADE OU MANUTENÇÃO: Tem menos ou igual aulas marcadas do que o pacote permite
         if (futureAppts.length > 0) {
             await prisma.appointment.updateMany({
                 where: { id: { in: futureAppts.map(a => a.id) } },
@@ -247,7 +290,6 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
         saldoCorrigido = totalAulas - futureAppts.length;
     }
 
-    // Atualiza o Perfil do Cliente com os dados consolidados
     await prisma.client.update({
       where: { id: clientId },
       data: { 
@@ -263,7 +305,6 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
       }
     });
 
-    // Registra no financeiro
     if (valorReal >= 0) {
       const isMensal = novoPlano.toUpperCase().includes('MENSAL');
       await prisma.transaction.create({
@@ -273,7 +314,7 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
           type: 'RECEITA',
           category: 'MENSALIDADE',
           status: statusTransacao, 
-          paymentMethod: isIsento ? 'PIX' : paymentMethod,
+          paymentMethod: isIsento ? 'PIX' : paymentMethod as any,
           clientId: clientId,
           date: agora 
         }
@@ -292,7 +333,6 @@ export async function atualizarPlanoCliente(clientId: string, novoPlano: string,
 
 export async function removerPlanoCliente(clientId: string) {
   try {
-    // Busca e cancela de forma cirúrgica e segura
     const aulasParaCancelar = await prisma.appointment.findMany({
         where: {
             clientId,
@@ -310,7 +350,6 @@ export async function removerPlanoCliente(clientId: string) {
         });
     }
 
-    // Zera os dados do pacote no cliente
     await prisma.client.update({
       where: { id: clientId },
       data: { 
@@ -357,13 +396,12 @@ export async function pagarParcelaPlano(clientId: string, valor: number, isento:
         amount: isento ? 0 : valor,
         type: 'RECEITA',
         category: 'MENSALIDADE',
-        status: statusTransacao,
-        paymentMethod: metodoSeguroDB,
+        status: statusTransacao as any,
+        paymentMethod: metodoSeguroDB as any,
         clientId: clientId,
         date: new Date()
       }
     })
-    
     revalidatePath('/financeiro')
     return { sucesso: true }
   } catch (error) {
@@ -495,17 +533,13 @@ export async function concluirSessaoComEvolucao(id: string, clientId?: string | 
       await prisma.evolution.create({ data: { clientId, description: evolucaoTexto, instructor: instructor || 'Sistema' } })
     }
 
-    // =======================================================
-    // AUTO-RESET: SE ESTA FOR A ÚLTIMA AULA DO PACOTE, ZERA TUDO
-    // =======================================================
+    // AUTO-RESET
     if (clientId) {
         const client = await prisma.client.findUnique({ where: { id: clientId } });
         if (client && client.plan && client.remainingSessions <= 0) {
             const futureApptsCount = await prisma.appointment.count({
                 where: { clientId, status: 'AGENDADO' }
             });
-            
-            // Se o saldo é zero e não há mais nada agendado pra frente:
             if (futureApptsCount === 0) {
                 await removerPlanoCliente(clientId);
             }
@@ -525,9 +559,7 @@ export async function marcarFaltaAgendamento(id: string) {
   try {
     const appt = await prisma.appointment.update({ where: { id }, data: { status: 'FALTA' } });
     
-    // =======================================================
-    // AUTO-RESET: CASO A FALTA SEJA DA ÚLTIMA AULA
-    // =======================================================
+    // AUTO-RESET
     if (appt.clientId) {
         const client = await prisma.client.findUnique({ where: { id: appt.clientId } });
         if (client && client.plan && client.remainingSessions <= 0) {
@@ -730,8 +762,11 @@ export async function validarAgendamentosPreview(dados: any) {
     const { tipoAgendamento, serviceType, clientId, instructorId, isAgendamentoManual, manualSessions, diasComHorarios, recorrenciaPeriodo, startDate, descontarDoPlano, comecarHoje, ignoreApptIds, forceTotalSessions } = dados;
 
     let clienteAtual = null;
-    if (tipoAgendamento === 'REGULAR' && serviceType === 'PILATES') {
+    if (tipoAgendamento === 'REGULAR') {
       clienteAtual = await prisma.client.findUnique({ where: { id: clientId } });
+      if (!clienteAtual || clienteAtual.status !== 'ativo') {
+        return { sucesso: false, erro: 'Este aluno está inativo e não pode receber novos agendamentos.' };
+      }
     }
 
     let datesToCheck: { date: Date, instructor: string, clientId?: string }[] = [];
@@ -881,10 +916,14 @@ export async function efetivarAgendamentos(dadosFinais: any) {
     
     let finalType: any = "EXPERIMENTAL";
     if (tipoAgendamento === 'REGULAR') {
+      const clienteAtual = await prisma.client.findUnique({ where: { id: clientId } });
+      if (!clienteAtual || clienteAtual.status !== 'ativo') {
+        return { sucesso: false, erro: 'Este aluno está inativo e não pode receber novos agendamentos.' };
+      }
+
       if (serviceType === 'FISIOTERAPIA') finalType = "FISIO_SESSAO"; 
       else {
-        const clienteAtual = await prisma.client.findUnique({ where: { id: clientId } });
-        const p = clienteAtual?.plan?.toUpperCase() || "";
+        const p = clienteAtual.plan?.toUpperCase() || "";
         if (p.includes("1X")) finalType = "PILATES_1X";
         else if (p.includes("2X")) finalType = "PILATES_2X";
         else if (p.includes("3X")) finalType = "PILATES_3X";

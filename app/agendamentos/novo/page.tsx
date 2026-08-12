@@ -15,7 +15,7 @@ export const revalidate = 0
 
 export default async function NovoAgendamentoPage() {
   noStore();
-  const clients = await getClients();
+  const clients = (await getClients()).filter(client => client.status === 'ativo');
 
   return (
     <div className="min-h-screen bg-background">
