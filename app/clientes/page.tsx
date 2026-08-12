@@ -6,10 +6,10 @@ import { Sidebar } from "@/components/sidebar"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Search, Plus, Filter, Trash2, Edit, AlertTriangle, Power } from "lucide-react"
+import { Search, Plus, Trash2, Edit, AlertTriangle, Power, ChevronDown, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ClientModal } from "@/components/client-modal"
-import { getClients, deleteClient, inativarCliente, ativarCliente } from "@/lib/actions"
+import { getClients, getClientsComRiscoEvasao, deleteClient, inativarCliente, ativarCliente } from "@/lib/actions"
 
 const getStatusColor = (status: string) => {
   switch (status?.toLowerCase()) {
@@ -24,7 +24,9 @@ const getInitials = (name: string) => name ? name.split(" ").map((n) => n[0]).jo
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([])
+  const [clientsComRiscoEvasao, setClientsComRiscoEvasao] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRadarMinimized, setIsRadarMinimized] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   
   // Estados para Filtro e Busca
@@ -43,8 +45,9 @@ export default function ClientsPage() {
   const loadClients = async () => {
     setIsLoading(true)
     try {
-      const data = await getClients()
+      const [data, alunosEmRisco] = await Promise.all([getClients(), getClientsComRiscoEvasao()])
       setClients(data)
+      setClientsComRiscoEvasao(alunosEmRisco)
     } catch (error) {
       console.error("Erro ao buscar clientes:", error)
     } finally {
@@ -53,6 +56,18 @@ export default function ClientsPage() {
   }
 
   useEffect(() => { loadClients() }, [])
+
+  useEffect(() => {
+    setIsRadarMinimized(window.localStorage.getItem('radar-evasao-minimizado') === 'true')
+  }, [])
+
+  const toggleRadar = () => {
+    setIsRadarMinimized(previous => {
+      const next = !previous
+      window.localStorage.setItem('radar-evasao-minimizado', String(next))
+      return next
+    })
+  }
 
   const handleModalClose = () => {
     setIsModalOpen(false)
@@ -114,20 +129,23 @@ export default function ClientsPage() {
           </div>
 
           {/* RADAR DE EVASÃO (CHURN) */}
-          {filteredClients.filter(c => c.status === "pausado" || c.status === "inativo").length > 0 && (
+          {clientsComRiscoEvasao.length > 0 && (
             <div className="mb-8 p-5 rounded-2xl bg-orange-500/10 border border-orange-500/30">
-              <div className="flex items-center gap-3 mb-4">
+              <div className={`flex items-center gap-3 ${isRadarMinimized ? '' : 'mb-4'}`}>
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500/20">
                   <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-lg font-bold text-orange-700 dark:text-orange-400">Radar de Evasão</h3>
-                  <p className="text-sm text-orange-600/80 dark:text-orange-300/80">Estes alunos estão ausentes. Um "Oi" agora pode resgatá-los!</p>
+                  <p className="text-sm text-orange-600/80 dark:text-orange-300/80">Sem interação registrada há mais de 2 meses.</p>
                 </div>
+                <Button variant="ghost" size="icon" onClick={toggleRadar} className="shrink-0 text-orange-700 hover:bg-orange-500/10 hover:text-orange-800" title={isRadarMinimized ? 'Expandir radar de evasão' : 'Minimizar radar de evasão'}>
+                  {isRadarMinimized ? <ChevronDown className="h-5 w-5" /> : <ChevronUp className="h-5 w-5" />}
+                </Button>
               </div>
               
-              <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-orange-500/20">
-                {filteredClients.filter(c => c.status === "pausado" || c.status === "inativo").map(atRisk => {
+              <div className={`${isRadarMinimized ? 'hidden' : 'flex'} gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-orange-500/20`}>
+                {clientsComRiscoEvasao.map(atRisk => {
                   // Prepara o link do WhatsApp com mensagem pronta
                   const number = atRisk.phone.replace(/\D/g, '');
                   const message = encodeURIComponent(`Olá ${atRisk.name.split(' ')[0]}, aqui é da MRF Pilates! Sentimos a sua falta esta semana. Está tudo bem com você?`);
@@ -141,7 +159,7 @@ export default function ClientsPage() {
                         </Avatar>
                         <div>
                           <p className="font-semibold text-sm truncate">{atRisk.name}</p>
-                          <p className="text-xs text-muted-foreground">Status: {atRisk.status}</p>
+                          <p className="text-xs text-muted-foreground">Última interação: {new Date(atRisk.ultimaInteracao).toLocaleDateString('pt-BR')}</p>
                         </div>
                       </div>
                       <a href={waLink} target="_blank" rel="noopener noreferrer" className="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 rounded-lg transition-colors">

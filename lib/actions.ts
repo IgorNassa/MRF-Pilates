@@ -170,6 +170,60 @@ export async function getClients() {
   return await prisma.client.findMany({ orderBy: { name: 'asc' } })
 }
 
+export async function getClientsComRiscoEvasao() {
+  const limiteInatividade = new Date()
+  limiteInatividade.setMonth(limiteInatividade.getMonth() - 2)
+
+  const clients = await prisma.client.findMany({
+    // Alunos inativados ou pausados manualmente não entram no radar.
+    where: { status: 'ativo' },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      fotoPerfil: true,
+      createdAt: true,
+      updatedAt: true,
+      appointments: {
+        orderBy: { updatedAt: 'desc' },
+        take: 1,
+        select: { updatedAt: true }
+      },
+      evolutions: {
+        orderBy: { updatedAt: 'desc' },
+        take: 1,
+        select: { updatedAt: true }
+      },
+      transactions: {
+        orderBy: { updatedAt: 'desc' },
+        take: 1,
+        select: { updatedAt: true }
+      }
+    }
+  })
+
+  return clients
+    .map(client => {
+      const ultimaInteracao = new Date(Math.max(
+        client.createdAt.getTime(),
+        client.updatedAt.getTime(),
+        client.appointments[0]?.updatedAt.getTime() ?? 0,
+        client.evolutions[0]?.updatedAt.getTime() ?? 0,
+        client.transactions[0]?.updatedAt.getTime() ?? 0
+      ))
+
+      return {
+        id: client.id,
+        name: client.name,
+        phone: client.phone,
+        fotoPerfil: client.fotoPerfil,
+        ultimaInteracao: ultimaInteracao.toISOString()
+      }
+    })
+    .filter(client => new Date(client.ultimaInteracao) <= limiteInatividade)
+    .sort((a, b) => new Date(a.ultimaInteracao).getTime() - new Date(b.ultimaInteracao).getTime())
+}
+
 export async function inativarCliente(id: string) {
   try {
     const aulasFuturas = await prisma.appointment.findMany({
