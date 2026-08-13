@@ -21,7 +21,7 @@ type PreviewSession = {
   dateStr: string;
   timeStr: string;
   instructor: string;
-  status: 'OK' | 'LOTADO' | 'INSTRUTOR_LOTADO' | 'BLOQUEADO' | 'DUPLICADO';
+  status: 'OK' | 'LOTADO' | 'BLOQUEADO' | 'DUPLICADO';
   errorMsg: string;
   diaFormatado: string;
 }
@@ -200,8 +200,6 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
     let errorMsg = '';
     if (timeStats[`${newInst}Blocked`]) { newStatus = 'BLOQUEADO'; errorMsg = `A Dra. ${newInst} também está indisponível.`; }
     else if (timeStats.total >= 4) { newStatus = 'LOTADO'; errorMsg = 'O estúdio está lotado neste horário (4 alunos).'; }
-    else if ((newInst === 'Marisa' ? timeStats.Marisa : timeStats.Loani) >= 2) { newStatus = 'INSTRUTOR_LOTADO'; errorMsg = `A Dra. ${newInst} já tem 2 alunos marcados.`; }
-
     const newData = [...previewData];
     newData[index] = { ...session, instructor: newInst, status: newStatus as any, errorMsg };
     setPreviewData(newData);
@@ -227,8 +225,6 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
     let errorMsg = '';
     if (timeStats[`${session.instructor}Blocked`]) { newStatus = 'BLOQUEADO'; errorMsg = `Indisponível neste novo horário.`; }
     else if (timeStats.total >= 4) { newStatus = 'LOTADO'; errorMsg = 'Este novo horário está lotado.'; }
-    else if ((session.instructor === 'Marisa' ? timeStats.Marisa : timeStats.Loani) >= 2) { newStatus = 'INSTRUTOR_LOTADO'; errorMsg = `A instrutora está lotada neste novo horário.`; }
-
     const [y, m, d] = newDate.split('-');
     const newData = [...previewData];
     newData[index] = { ...session, dateStr: newDate, timeStr: newTime, status: newStatus as any, errorMsg, diaFormatado: `${d}/${m}/${y}` };
@@ -514,7 +510,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
                           <SelectContent>
                             {availableTimes.map(({ time, disabled }) => {
                               const st = dayStats[session.date]?.[time] || { total: 0, Marisa: 0, Loani: 0 };
-                              const isBlocked = st.total >= 4 || (instructorId === 'Marisa' ? st.Marisa : st.Loani) >= 2 || st[`${instructorId}Blocked`] || disabled;
+                              const isBlocked = st.total >= 4 || st[`${instructorId}Blocked`] || disabled;
                               return <SelectItem key={time} value={time} disabled={isBlocked} className={isBlocked ? 'text-slate-400' : 'font-bold'}>{time}</SelectItem>
                             })}
                           </SelectContent>

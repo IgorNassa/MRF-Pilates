@@ -797,9 +797,6 @@ export async function atualizarAgendamento(id: string, novaData: Date, novoInstr
     });
 
     if (existingAppts.length >= 4) return { sucesso: false, erro: "Lotação máxima (4 alunos)." };
-    const instrCount = existingAppts.filter(a => a.instructor === novoInstrutor).length;
-    if (instrCount >= 2) return { sucesso: false, erro: `A Dra. ${novoInstrutor} já atingiu o limite neste horário.` };
-
     await prisma.appointment.update({ where: { id }, data: { date: novaData, instructor: novoInstrutor } })
     revalidatePath('/agendamentos')
     return { sucesso: true }
@@ -927,8 +924,6 @@ export async function validarAgendamentosPreview(dados: any) {
         if (isBlockedByDoctor) { status = 'BLOQUEADO'; errorMsg = `A Dra. ${req.instructor} está marcada como Indisponível neste horário.`; }
         else if (req.clientId && inSlot.some(a => a.clientId === req.clientId)) { status = 'DUPLICADO'; errorMsg = `O aluno já tem aula marcada neste dia e horário.`; }
         else if (inSlot.length >= 4) { status = 'LOTADO'; errorMsg = `Estúdio lotado (4/4) vagas ocupadas neste dia/horário.`; }
-        else if (inSlot.filter(a => a.instructor === req.instructor).length >= 2) { status = 'INSTRUTOR_LOTADO'; errorMsg = `A Dra. ${req.instructor} já tem 2 alunos marcados.`; }
-
         return {
             id: `temp-${idx}`,
             dateStr,
@@ -1020,8 +1015,6 @@ export async function efetivarAgendamentos(dadosFinais: any) {
         if (isBlockedByDoctor) return { sucesso: false, erro: `A Dra. ${req.instructor} ficou Indisponível dia ${diaStr} às ${horaStr}.` };
         if (req.clientId && inSlot.some((a: any) => a.clientId === req.clientId)) return { sucesso: false, erro: `O aluno já tem aula no dia ${diaStr} às ${horaStr}.` };
         if (inSlot.length >= 4) return { sucesso: false, erro: `A vaga do dia ${diaStr} às ${horaStr} acabou de ser ocupada e o estúdio lotou.` };
-        if (inSlot.filter((a: any) => a.instructor === req.instructor).length >= 2) return { sucesso: false, erro: `A Dra. ${req.instructor} acabou de lotar a agenda no dia ${diaStr} às ${horaStr}.` };
-        
         inSlot.push({ date: req.date, instructor: req.instructor, clientId: req.clientId });
         grouped[t] = inSlot;
     }

@@ -194,8 +194,6 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
         );
 
         const isTimeFull = apptsOnEditTime.length >= 4;
-        const isInstructorFull = apptsOnEditTime.filter(app => app.instructor === editDialog.instructor).length >= 2;
-
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100">
@@ -243,29 +241,23 @@ export default function AgendaTabs({ initialAppointments = [], msgConfirmacao = 
                 <div>
                   <div className="flex justify-between items-end mb-1.5">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Instrutor(a)</label>
-                    {isInstructorFull && <span className="text-[10px] font-black text-red-600 bg-red-100 px-2 py-0.5 rounded-full flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Limite da Doutora</span>}
                   </div>
                   <select 
                     value={editDialog.instructor}
                     onChange={(e) => setEditDialog({...editDialog, instructor: e.target.value})}
-                    className={`w-full p-3 border rounded-xl focus:ring-2 focus:outline-none bg-white font-medium ${isInstructorFull ? 'border-red-300 focus:ring-red-400 text-red-600 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : 'border-slate-200 focus:ring-[#0f5c4e] text-slate-800'}`}
+                    className="w-full p-3 border rounded-xl focus:ring-2 focus:outline-none bg-white font-medium border-slate-200 focus:ring-[#0f5c4e] text-slate-800"
                   >
                     <option value="Marisa">Dra. Marisa</option>
                     <option value="Loani">Dra. Loani</option>
                   </select>
-                  {isInstructorFull && (
-                    <p className="text-[10px] text-red-500 mt-2 font-medium bg-red-50 p-2 rounded-lg border border-red-100">
-                      A Dra. <b>{editDialog.instructor}</b> já possui o limite de 2 alunos neste horário. Por favor, escolha a outra instrutora ou altere o horário.
-                    </p>
-                  )}
                 </div>
               </div>
               <div className="bg-slate-50 p-6 border-t border-slate-100 flex justify-end gap-3 rounded-b-3xl">
                 <Button variant="outline" onClick={() => setEditDialog(null)} disabled={isActionProcessing} className="font-bold h-12 px-6">Cancelar</Button>
                 <Button 
                   onClick={handleEditSubmit} 
-                  disabled={isActionProcessing || isInstructorFull || isTimeFull} 
-                  className={`text-white font-bold h-12 px-8 shadow-md transition-all ${(isActionProcessing || isInstructorFull || isTimeFull) ? 'bg-slate-300 cursor-not-allowed text-slate-500' : 'bg-[#0f5c4e] hover:bg-[#0a453a]'}`}
+                  disabled={isActionProcessing || isTimeFull}
+                  className={`text-white font-bold h-12 px-8 shadow-md transition-all ${(isActionProcessing || isTimeFull) ? 'bg-slate-300 cursor-not-allowed text-slate-500' : 'bg-[#0f5c4e] hover:bg-[#0a453a]'}`}
                 >
                   {isActionProcessing ? 'A Salvar...' : 'Salvar Alteração'}
                 </Button>
