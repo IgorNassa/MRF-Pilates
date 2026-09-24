@@ -39,6 +39,7 @@ export default function PlanButtons({ clientId, currentPlan, planValue, planInst
     "PILATES_3X MENSAL": settings?.plan3xMensal || 350,
     "PILATES_3X TRIMESTRAL": settings?.plan3xTrimestral || 1000,
     "PILATES_3X SEMESTRAL": settings?.plan3xSemestral || 1800,
+    "PILATES_5X MENSAL": settings?.plan5xMensal ?? 550,
     "FISIO_SESSAO MENSAL": (settings?.priceFisio * 4) || 600
   }
 
@@ -129,6 +130,7 @@ export default function PlanButtons({ clientId, currentPlan, planValue, planInst
                     <SelectItem value="PILATES_3X MENSAL">Pilates 3x - Mensal</SelectItem>
                     <SelectItem value="PILATES_3X TRIMESTRAL">Pilates 3x - Trimestral</SelectItem>
                     <SelectItem value="PILATES_3X SEMESTRAL">Pilates 3x - Semestral</SelectItem>
+                    <SelectItem value="PILATES_5X MENSAL">Pilates 5x - Mensal</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

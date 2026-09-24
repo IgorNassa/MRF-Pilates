@@ -279,7 +279,7 @@ export default function NewAppointmentForm({ clients = [] }: { clients: Client[]
               {hasConflicts && (
                 <div className="mb-6 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl flex gap-3 text-sm font-bold shadow-sm">
                   <AlertCircle className="w-5 h-5 shrink-0" />
-                  <p>Existem horários com conflito (ex: Instrutor ou Estúdio Lotado). Clique neles para resolver os problemas ou escolha "Remover Sessão" para ignorá-las e guardar o saldo.</p>
+                  <p>Existem horários com conflito (ex: Instrutor ou Estúdio Lotado). Clique neles para resolver os problemas ou escolha &quot;Remover Sessão&quot; para ignorá-las e guardar o saldo.</p>
                 </div>
               )}
 
