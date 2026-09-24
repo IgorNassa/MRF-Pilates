@@ -8,7 +8,7 @@ async function main() {
   
   const senhaMRF = await bcrypt.hash('MRFfisio@26!', 10)
 
-  const draMarisa = await prisma.User.upsert({
+  const draMarisa = await prisma.user.upsert({
     where: { email: 'marisa.stoicov@gmail.com' }, 
     update: { password: senhaMRF },
     create: {
@@ -18,7 +18,7 @@ async function main() {
     },
   })
 
-  const draLoani = await prisma.User.upsert({
+  const draLoani = await prisma.user.upsert({
     where: { email: 'loaniglobes3@gmail.com' }, 
     update: { password: senhaMRF },
     create: {
