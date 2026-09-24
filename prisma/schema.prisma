@@ -173,6 +173,8 @@ model Settings {
   plan3xTrimestral Float    @default(1000.00)
   plan3xSemestral  Float    @default(1800.00)
   plan5xMensal     Float    @default(550.00)
+  plan5xTrimestral Float    @default(1600.00)
+  plan5xSemestral  Float    @default(2800.00)
 
   // Mensagens (WhatsApp)
   msgFatura       String?

@@ -29,7 +29,7 @@ export default function ConfiguracoesPage() {
     plan1xMensal: 0, plan1xTrimestral: 0, plan1xSemestral: 0,
     plan2xMensal: 0, plan2xTrimestral: 0, plan2xSemestral: 0,
     plan3xMensal: 0, plan3xTrimestral: 0, plan3xSemestral: 0,
-    plan5xMensal: 0,
+    plan5xMensal: 0, plan5xTrimestral: 0, plan5xSemestral: 0,
     msgFatura: '', msgAtraso: '', msgConfirmacao: '', msgAniversario: '', msgProspeccao: ''
   })
 
@@ -44,7 +44,7 @@ export default function ConfiguracoesPage() {
           plan1xMensal: data.plan1xMensal || 0, plan1xTrimestral: data.plan1xTrimestral || 0, plan1xSemestral: data.plan1xSemestral || 0,
           plan2xMensal: data.plan2xMensal || 0, plan2xTrimestral: data.plan2xTrimestral || 0, plan2xSemestral: data.plan2xSemestral || 0,
           plan3xMensal: data.plan3xMensal || 0, plan3xTrimestral: data.plan3xTrimestral || 0, plan3xSemestral: data.plan3xSemestral || 0,
-          plan5xMensal: data.plan5xMensal ?? 550,
+          plan5xMensal: data.plan5xMensal ?? 550, plan5xTrimestral: data.plan5xTrimestral ?? 1600, plan5xSemestral: data.plan5xSemestral ?? 2800,
           msgFatura: data.msgFatura || '', msgAtraso: data.msgAtraso || '', msgConfirmacao: data.msgConfirmacao || '', msgAniversario: data.msgAniversario || '', msgProspeccao: data.msgProspeccao || ''
         })
       }
@@ -266,9 +266,19 @@ export default function ConfiguracoesPage() {
 
                     <div className="flex flex-col sm:flex-row gap-4 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
                       <div className="flex-1 flex items-center"><h3 className="font-bold text-slate-800">Pilates 5x na Semana</h3></div>
-                      <div className="w-full sm:w-32">
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mensal</label>
-                        <Input type="number" min="0" step="0.01" value={config.plan5xMensal || ''} onChange={e => setConfig({...config, plan5xMensal: Number(e.target.value)})} className="h-9 font-semibold" />
+                      <div className="grid grid-cols-3 gap-3 w-full sm:w-auto">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Mensal</label>
+                          <Input type="number" min="0" step="0.01" value={config.plan5xMensal || ''} onChange={e => setConfig({...config, plan5xMensal: Number(e.target.value)})} className="h-9 font-semibold" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Trimestral</label>
+                          <Input type="number" min="0" step="0.01" value={config.plan5xTrimestral || ''} onChange={e => setConfig({...config, plan5xTrimestral: Number(e.target.value)})} className="h-9 font-semibold" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Semestral</label>
+                          <Input type="number" min="0" step="0.01" value={config.plan5xSemestral || ''} onChange={e => setConfig({...config, plan5xSemestral: Number(e.target.value)})} className="h-9 font-semibold" />
+                        </div>
                       </div>
                     </div>
                   </div>

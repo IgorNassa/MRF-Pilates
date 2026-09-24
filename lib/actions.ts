@@ -1143,7 +1143,7 @@ export async function getSettings() {
       settings = await prisma.settings.create({
         data: {
           studioName: "MRF Pilates", openTime: "07:00", closeTime: "19:00", priceFisio: 150.00, pricePilates: 100.00, priceExp: 50.00,
-          plan1xMensal: 150.00, plan1xTrimestral: 400.00, plan1xSemestral: 750.00, plan2xMensal: 250.00, plan2xTrimestral: 700.00, plan2xSemestral: 1300.00, plan3xMensal: 350.00, plan3xTrimestral: 1000.00, plan3xSemestral: 1800.00, plan5xMensal: 550.00,
+          plan1xMensal: 150.00, plan1xTrimestral: 400.00, plan1xSemestral: 750.00, plan2xMensal: 250.00, plan2xTrimestral: 700.00, plan2xSemestral: 1300.00, plan3xMensal: 350.00, plan3xTrimestral: 1000.00, plan3xSemestral: 1800.00, plan5xMensal: 550.00, plan5xTrimestral: 1600.00, plan5xSemestral: 2800.00,
           msgFatura: "Olá...", msgAtraso: "Olá...", msgConfirmacao: "Olá...", msgAniversario: "Parabéns...", msgProspeccao: "Olá..."
         }
       });
@@ -1230,6 +1230,8 @@ export async function getCommissionsReport(instructor: string, startDateStr: str
       "PILATES_3X TRIMESTRAL": settings?.plan3xTrimestral || 1000,
       "PILATES_3X SEMESTRAL": settings?.plan3xSemestral || 1800,
       "PILATES_5X MENSAL": settings?.plan5xMensal ?? 550,
+      "PILATES_5X TRIMESTRAL": settings?.plan5xTrimestral ?? 1600,
+      "PILATES_5X SEMESTRAL": settings?.plan5xSemestral ?? 2800,
     };
 
     const data = appts.map(app => {
